@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +9,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 const port = Number(process.env.PORT || 3000);
+const host = process.env.HOST || (process.env.NODE_ENV === "production" ? "127.0.0.1" : "0.0.0.0");
+
+app.disable("x-powered-by");
+
+if (process.env.NODE_ENV === "production" && !process.env.APP_SECRET) {
+  throw new Error("APP_SECRET must be configured in production");
+}
 
 app.use(express.json({ limit: "1mb" }));
 
@@ -33,6 +41,6 @@ app.use((error: Error & { status?: number }, _request: express.Request, response
 
 await genesysRegionService.initialize();
 
-app.listen(port, "0.0.0.0", () => {
-  console.log(`TISCO Insure listening on ${port}`);
+app.listen(port, host, () => {
+  console.log(`TISCO Insure listening on ${host}:${port}`);
 });
