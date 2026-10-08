@@ -13,6 +13,7 @@ import {
   FileText,
   Filter,
   Globe2,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -179,6 +180,9 @@ function Login({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const passwordChanged = new URLSearchParams(window.location.search).has(
+    "passwordChanged",
+  );
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -210,6 +214,11 @@ function Login({
       <form onSubmit={submit}>
         <h1>เข้าสู่ระบบ</h1>
         <p>จัดการข้อมูลประกันภัยและการต่ออายุ</p>
+        {passwordChanged && (
+          <div className="admin-success" role="status">
+            เปลี่ยนรหัสผ่านแล้ว กรุณาเข้าสู่ระบบด้วยรหัสใหม่
+          </div>
+        )}
         <label>
           ชื่อผู้ใช้
           <input
@@ -3265,11 +3274,12 @@ function SystemSettings() {
       <PageHead
         eyebrow="ระบบ"
         title="ตั้งค่าระบบ"
-        description="สำรองข้อมูลและจัดการชุดข้อมูลสาธิต"
+        description="จัดการบัญชีผู้ดูแลและข้อมูลสาธิต"
       />
       <ErrorNotice error={error} />
       {message && <div className="admin-success">{message}</div>}
       <div className="settings-grid">
+        <PasswordSettings />
         <section className="admin-panel">
           <DatabaseBackup size={28} />
           <h2>สำรองข้อมูล</h2>
@@ -3318,5 +3328,99 @@ function SystemSettings() {
         </section>
       </div>
     </>
+  );
+}
+
+function PasswordSettings() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function changePassword(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    if (newPassword !== confirmPassword) {
+      setError("รหัสผ่านใหม่ไม่ตรงกัน");
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setError("รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api(`${base}/auth/change-password`, {
+        method: "POST",
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+          confirmPassword,
+        }),
+      });
+      window.location.href = "/backend/login?passwordChanged=1";
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "เปลี่ยนรหัสผ่านไม่สำเร็จ",
+      );
+      setCurrentPassword("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="admin-panel credential-panel">
+      <KeyRound size={28} />
+      <h2>เปลี่ยนรหัสผ่านผู้ดูแล</h2>
+      <form className="credential-form" onSubmit={changePassword}>
+        <div className="credential-fields">
+          <label>
+            รหัสผ่านปัจจุบัน
+            <input
+              autoComplete="current-password"
+              required
+              type="password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+            />
+          </label>
+          <label>
+            รหัสผ่านใหม่
+            <input
+              autoComplete="new-password"
+              minLength={12}
+              maxLength={128}
+              required
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+            />
+          </label>
+          <label>
+            ยืนยันรหัสผ่านใหม่
+            <input
+              autoComplete="new-password"
+              minLength={12}
+              maxLength={128}
+              required
+              type="password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+            />
+          </label>
+        </div>
+        {error && (
+          <div className="admin-error" role="alert">
+            {error}
+          </div>
+        )}
+        <button className="admin-primary" disabled={busy} type="submit">
+          <KeyRound size={16} />{" "}
+          {busy ? "กำลังบันทึก..." : "บันทึกรหัสผ่านใหม่"}
+        </button>
+      </form>
+    </section>
   );
 }

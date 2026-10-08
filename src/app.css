@@ -1828,6 +1828,23 @@ a {
   justify-items: start;
   gap: 12px;
 }
+.settings-grid .credential-panel {
+  grid-column: 1 / -1;
+}
+.credential-form {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+}
+.credential-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+.credential-form .admin-primary {
+  justify-self: start;
+}
 .settings-grid svg {
   color: var(--red);
 }
@@ -2130,6 +2147,9 @@ a {
   .detail-admin-grid,
   .campaign-layout,
   .settings-grid {
+    grid-template-columns: 1fr;
+  }
+  .credential-fields {
     grid-template-columns: 1fr;
   }
   .campaign-list {

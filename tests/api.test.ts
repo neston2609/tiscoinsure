@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -362,6 +362,138 @@ test(
           .status,
         401,
       );
+      assert.equal(
+        (
+          await request("/api/admin/auth/change-password", "POST", {
+            currentPassword: "TestPassword123!",
+            newPassword: "NewPassword456!",
+            confirmPassword: "NewPassword456!",
+          })
+        ).status,
+        401,
+      );
+      const primaryLogin = await request("/api/admin/auth/login", "POST", {
+        username: "admin",
+        password: "TestPassword123!",
+      });
+      const primaryCookie = primaryLogin.headers
+        .get("set-cookie")
+        ?.split(";")[0];
+      assert.ok(primaryCookie);
+      const secondaryLogin = await request("/api/admin/auth/login", "POST", {
+        username: "admin",
+        password: "TestPassword123!",
+      });
+      const secondaryCookie = secondaryLogin.headers
+        .get("set-cookie")
+        ?.split(";")[0];
+      assert.ok(secondaryCookie);
+      const change = (body: Record<string, string>) =>
+        request("/api/admin/auth/change-password", "POST", body, primaryCookie);
+      assert.equal(
+        (
+          await change({
+            currentPassword: "incorrect",
+            newPassword: "NewPassword456!",
+            confirmPassword: "NewPassword456!",
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await change({
+            currentPassword: "TestPassword123!",
+            newPassword: "short",
+            confirmPassword: "short",
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await change({
+            currentPassword: "TestPassword123!",
+            newPassword: "NewPassword456!",
+            confirmPassword: "DifferentPassword456!",
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await change({
+            currentPassword: "TestPassword123!",
+            newPassword: "TestPassword123!",
+            confirmPassword: "TestPassword123!",
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await change({
+            currentPassword: "TestPassword123!",
+            newPassword: "NewPassword456!",
+            confirmPassword: "NewPassword456!",
+          })
+        ).status,
+        204,
+      );
+      assert.equal(
+        (await request("/api/admin/customers", "GET", undefined, primaryCookie))
+          .status,
+        401,
+      );
+      assert.equal(
+        (
+          await request(
+            "/api/admin/customers",
+            "GET",
+            undefined,
+            secondaryCookie,
+          )
+        ).status,
+        401,
+      );
+      assert.deepEqual(
+        await (
+          await request(
+            "/api/admin/auth/session",
+            "GET",
+            undefined,
+            secondaryCookie,
+          )
+        ).json(),
+        { authenticated: false, username: "" },
+      );
+      assert.equal(
+        (
+          await request("/api/admin/auth/login", "POST", {
+            username: "admin",
+            password: "TestPassword123!",
+          })
+        ).status,
+        401,
+      );
+      const newLogin = await request("/api/admin/auth/login", "POST", {
+        username: "admin",
+        password: "NewPassword456!",
+      });
+      assert.equal(newLogin.status, 200);
+      const newCookie = newLogin.headers.get("set-cookie")?.split(";")[0];
+      assert.ok(newCookie);
+      assert.equal(
+        (await request("/api/admin/dashboard", "GET", undefined, newCookie))
+          .status,
+        200,
+      );
+      const savedCredentials = await readFile(
+        path.join(root, "data", ".auth", "admin.json"),
+        "utf8",
+      );
+      assert.ok(!savedCredentials.includes("TestPassword123!"));
+      assert.ok(!savedCredentials.includes("NewPassword456!"));
     } finally {
       if (child.exitCode === null) {
         child.kill();

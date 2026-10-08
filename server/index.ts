@@ -13,6 +13,7 @@ import { publicRouter } from "./routes/public.routes";
 import { initializeBusinessData } from "./domain/store";
 import { FileSessionStore } from "./middleware/file-session-store";
 import { genesysRegionService } from "./services/genesys/genesys-region.service";
+import { adminCredentials } from "./services/admin-credentials.service";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,13 +29,8 @@ app.set("trust proxy", "loopback");
 if (process.env.NODE_ENV === "production" && !process.env.APP_SECRET) {
   throw new Error("APP_SECRET must be configured in production");
 }
-if (
-  process.env.NODE_ENV === "production" &&
-  (!process.env.SESSION_SECRET || !process.env.ADMIN_PASSWORD)
-) {
-  throw new Error(
-    "SESSION_SECRET and ADMIN_PASSWORD must be configured in production",
-  );
+if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
+  throw new Error("SESSION_SECRET must be configured in production");
 }
 
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -114,24 +110,21 @@ app.use(
     _next: express.NextFunction,
   ) => {
     if (error instanceof ZodError) {
-      response
-        .status(400)
-        .json({
-          message: error.issues[0]?.message || "Invalid input",
-          issues: error.issues,
-        });
+      response.status(400).json({
+        message: error.issues[0]?.message || "Invalid input",
+        issues: error.issues,
+      });
       return;
     }
     const status = error.status ?? 500;
     if (status >= 500) console.error(error);
-    response
-      .status(status)
-      .json({
-        message: status >= 500 ? "Unexpected server error" : error.message,
-      });
+    response.status(status).json({
+      message: status >= 500 ? "Unexpected server error" : error.message,
+    });
   },
 );
 
+await adminCredentials.initialize();
 await genesysRegionService.initialize();
 await initializeBusinessData();
 

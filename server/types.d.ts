@@ -13,5 +13,6 @@ export {};
 declare module "express-session" {
   interface SessionData {
     admin?: string;
+    adminCredentialVersion?: string;
   }
 }

@@ -13,31 +13,31 @@ npm run build
 npm start
 ```
 
-Create a server-only `.env` from `.env.example` before `npm start`. Set persistent random values for `APP_SECRET` and `SESSION_SECRET`, and a strong `ADMIN_PASSWORD`. The production server listens on `127.0.0.1:3000` unless `HOST`/`PORT` are set. For local development run `npm run dev:server` and `npm run dev:client` in separate terminals; Vite is at `http://localhost:5173` and proxies `/api` to the Express server on port 3000. The development-only default login is `admin` / `ChangeMe123!`; override it via `.env` for any shared environment.
+Create a server-only `.env` from `.env.example` before `npm start`. Set persistent random values for `APP_SECRET` and `SESSION_SECRET`, and a strong `ADMIN_PASSWORD` for the first boot. The application hashes this bootstrap password into `data/.auth/admin.json`; later changes are made under `/backend/settings` and persist independently of `.env`. Once the credential file exists, remove the bootstrap `ADMIN_PASSWORD` from `.env` so an old password cannot become a fallback if the credential file is lost. The production server listens on `127.0.0.1:3000` unless `HOST`/`PORT` are set. For local development run `npm run dev:server` and `npm run dev:client` in separate terminals; Vite is at `http://localhost:5173` and proxies `/api` to the Express server on port 3000. The development-only default login is `admin` / `ChangeMe123!`; override it via `.env` for any shared environment.
 
 ## Routes
 
-| Path | Purpose |
-| --- | --- |
-| `/` | Public homepage |
-| `/products`, `/products/:slug` | Catalog, comparison, product detail |
-| `/recommend` | Product recommendation wizard |
-| `/contact` | Callback request |
-| `/backend/login` | Admin login |
-| `/backend` | Dashboard |
-| `/backend/customers`, `/backend/customers/:id` | Customer CRUD and 360 view |
-| `/backend/products`, `/backend/policies` | Product and policy CRUD |
-| `/backend/renewals`, `/backend/campaigns` | Renewal and campaign management |
-| `/backend/inquiries`, `/backend/audit` | Inquiries and audit |
-| `/backend/genesys`, `/backend/settings` | Genesys configuration and backup/reset |
+| Path                                           | Purpose                                                  |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| `/`                                            | Public homepage                                          |
+| `/products`, `/products/:slug`                 | Catalog, comparison, product detail                      |
+| `/recommend`                                   | Product recommendation wizard                            |
+| `/contact`                                     | Callback request                                         |
+| `/backend/login`                               | Admin login                                              |
+| `/backend`                                     | Dashboard                                                |
+| `/backend/customers`, `/backend/customers/:id` | Customer CRUD and 360 view                               |
+| `/backend/products`, `/backend/policies`       | Product and policy CRUD                                  |
+| `/backend/renewals`, `/backend/campaigns`      | Renewal and campaign management                          |
+| `/backend/inquiries`, `/backend/audit`         | Inquiries and audit                                      |
+| `/backend/genesys`, `/backend/settings`        | Genesys configuration, password change, and backup/reset |
 
-The public website cannot access `/api/admin/*`. Admin APIs use a signed, HTTP-only session cookie, same-origin checks on mutations, a login rate limit, and file-backed sessions. In production the cookie requires HTTPS. Client Secret and OAuth tokens are never returned to the browser.
+The public website cannot access `/api/admin/*`. Admin APIs use a signed, HTTP-only session cookie, same-origin checks on mutations, a login rate limit, and file-backed sessions. In production the cookie requires HTTPS. Changing the admin password requires the current password and invalidates all existing admin sessions. Client Secret and OAuth tokens are never returned to the browser.
 
 ## Data and backups
 
-All business records live in `data/*.json`. On first boot the app seeds 30 customers, 10 products, 40 policies, 5 inquiries, and 6 campaigns. `CUST00001` and `POL00001` are the sample customer/policy. JSON writes are serialized per file and atomic. `data/config/*.json` holds Genesys regions and encrypted configuration; `data/.sessions/` stores sessions. None of these generated files should be committed.
+All business records live in `data/*.json`. On first boot the app seeds 30 customers, 10 products, 40 policies, 5 inquiries, and 6 campaigns. `CUST00001` and `POL00001` are the sample customer/policy. JSON writes are serialized per file and atomic. `data/config/*.json` holds Genesys regions and encrypted configuration; `data/.auth/admin.json` holds the salted admin password hash; `data/.sessions/` stores sessions. None of these generated files should be committed.
 
-The admin Settings page creates backups under `backups/` before download or demo reset. Downloaded backups redact Genesys OAuth credentials; server-side backup files include encrypted configuration. When moving servers, preserve `APP_SECRET` to decrypt an existing Client Secret, or enter a new Client Secret in the UI. Use a filesystem-level backup of both `data/` and `.env` for full disaster recovery. `DATA_DIR`, `BACKUPS_DIR`, and `EXPORTS_DIR` can be set to move runtime data.
+The admin Settings page creates backups under `backups/` before download or demo reset. Downloaded backups redact Genesys OAuth credentials and omit the admin credential hash; server-side backup files include encrypted Genesys configuration. When moving servers, preserve `APP_SECRET` to decrypt an existing Client Secret, or enter a new Client Secret in the UI. Use a filesystem-level backup of both `data/` (including `.auth/`) and `.env` for full disaster recovery. `DATA_DIR`, `BACKUPS_DIR`, and `EXPORTS_DIR` can be set to move runtime data.
 
 ## Genesys Cloud setup
 
@@ -91,4 +91,4 @@ The last request should return HTTP 401 without an admin session. `GET /api/heal
 
 ## Tests
 
-`npm test` covers Thai phone normalization, Bangkok-relative expiry, DNC/campaign preview, safe CSV encoding, Genesys schema comparison, mocked Genesys create/no-op/update/DNC/mismatch, and an isolated HTTP workflow for public requests, session auth, CRUD, campaign export, and backup redaction. The HTTP test uses temporary data directories and does not touch production JSON files.
+`npm test` covers Thai phone normalization, Bangkok-relative expiry, DNC/campaign preview, safe CSV encoding, Genesys schema comparison, mocked Genesys create/no-op/update/DNC/mismatch, password changes/session invalidation/restart persistence, and an isolated HTTP workflow for public requests, session auth, CRUD, campaign export, and backup redaction. The HTTP test uses temporary data directories and does not touch production JSON files.
