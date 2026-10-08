@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export const configDir = path.resolve(process.cwd(), "data", "config");
+export const configDir = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), "data"), "config");
 
 export async function readJsonFile<T>(fileName: string, fallback: T): Promise<T> {
   try {

@@ -5,3 +5,8 @@ dist
 npm-debug.log*
 data/config/*.json
 data/config/*.tmp
+data/*.json
+data/.secrets/
+data/.sessions/
+exports/
+backups/

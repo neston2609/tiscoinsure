@@ -1,0 +1,21 @@
+[Unit]
+Description=MFEC Insurrance web application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/app/tiscoinsure
+EnvironmentFile=/app/tiscoinsure/.env
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/app/tiscoinsure/data /app/tiscoinsure/backups /app/tiscoinsure/exports
+
+[Install]
+WantedBy=multi-user.target

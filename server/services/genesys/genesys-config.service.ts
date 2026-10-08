@@ -25,9 +25,7 @@ export class GenesysConfigService {
 
   async ensureConfig(): Promise<GenesysConfig> {
     const config = await readJsonFile<GenesysConfig>(CONFIG_FILE, defaultConfig);
-    const merged = { ...defaultConfig, ...config };
-    await writeJsonFile(CONFIG_FILE, merged);
-    return merged;
+    return { ...defaultConfig, ...config };
   }
 
   async getConfig(): Promise<GenesysConfig> {
@@ -50,11 +48,15 @@ export class GenesysConfigService {
       phoneColumn: input.phoneColumn ?? current.phoneColumn
     };
 
-    if (next.regionId !== current.regionId) {
+    if (next.regionId !== current.regionId || next.clientId !== current.clientId || next.clientSecretEncrypted !== current.clientSecretEncrypted) {
       tokenCacheService.clear();
       next.lastConnectionStatus = "NOT_TESTED";
       next.lastConnectionAt = "";
+    }
+    if (next.regionId !== current.regionId || next.contactListId !== current.contactListId || next.phoneColumn !== current.phoneColumn) {
       next.schemaStatus = "NOT_TESTED";
+    }
+    if (next.regionId !== current.regionId) {
       await this.audit.append("GENESYS_REGION_SELECTED", {
         fromRegionId: current.regionId,
         toRegionId: next.regionId
