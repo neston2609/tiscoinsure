@@ -1695,6 +1695,10 @@ a {
 .admin-check input,
 .admin-table input[type="checkbox"] {
   accent-color: var(--red);
+  flex: 0 0 auto;
+  height: 16px;
+  min-height: 0;
+  width: 16px;
 }
 .form-actions {
   display: flex;
