@@ -2,15 +2,14 @@ import {
   CheckCircle2,
   Clock3,
   ExternalLink,
-  Globe2,
   History,
   Loader2,
   Pencil,
+  Play,
   Plus,
   Search,
   RefreshCcw,
   Save,
-  ShieldCheck,
   Trash2,
   X,
 } from "lucide-react";
@@ -25,7 +24,7 @@ import type {
 } from "./lib/api";
 import { api } from "./lib/api";
 
-type Tab = "integration" | "regions";
+type Tab = "integration" | "regions" | "scheduler";
 type EditorMode = "edit" | "create";
 type ContactList = {
   id: string;
@@ -34,6 +33,40 @@ type ContactList = {
   phoneColumns?: unknown[];
 };
 type Campaign = { campaignListId: string; name: string };
+type ScheduleFrequency = "ONCE" | "DAILY" | "WEEKLY";
+type ScheduleTask = {
+  schedulerTaskId: string;
+  name: string;
+  campaignListId: string;
+  frequency: ScheduleFrequency;
+  time: string;
+  date?: string;
+  dayOfWeek?: number;
+  enabled: boolean;
+  nextRunAt: string;
+  lastRunAt: string;
+  lastRunStatus: "NEVER" | "RUNNING" | "SUCCESS" | "PARTIAL" | "FAILED";
+  lastRunMessage: string;
+  lastRunSummary: {
+    matched: number;
+    eligible: number;
+    processed: number;
+    successful: number;
+    failed: number;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+};
+type ScheduleDraft = Pick<
+  ScheduleTask,
+  | "name"
+  | "campaignListId"
+  | "frequency"
+  | "time"
+  | "date"
+  | "dayOfWeek"
+  | "enabled"
+>;
 type ContactPreview = {
   rows: {
     contact: {
@@ -101,8 +134,7 @@ const emptyCustomRegion: GenesysRegion = {
   updatedBy: "",
 };
 
-export function App() {
-  const [tab, setTab] = useState<Tab>("integration");
+export function App({ tab = "integration" }: { tab?: Tab }) {
   const [configResponse, setConfigResponse] = useState<ConfigResponse | null>(
     null,
   );
@@ -381,528 +413,500 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-block">
-          <span>MFEC Insurrance</span>
-          <strong>Genesys Cloud</strong>
+    <div className="genesys-workspace">
+      <header className="topbar">
+        <div>
+          <span className="eyebrow">Genesys Cloud</span>
+          <h1>
+            {tab === "regions"
+              ? "Region management"
+              : tab === "scheduler"
+                ? "Auto Sync Scheduler"
+                : "Integration settings"}
+          </h1>
         </div>
-        <nav>
-          <button
-            className={tab === "integration" ? "active" : ""}
-            onClick={() => setTab("integration")}
-          >
-            <ShieldCheck size={18} />
-            Integration
-          </button>
-          <button
-            className={tab === "regions" ? "active" : ""}
-            onClick={() => setTab("regions")}
-          >
-            <Globe2 size={18} />
-            Regions
-          </button>
-        </nav>
-      </aside>
+        <StatusPill status={configResponse.config.lastConnectionStatus} />
+      </header>
 
-      <section className="workspace">
-        <header className="topbar">
-          <div>
-            <span className="eyebrow">Admin / Settings</span>
-            <h1>Genesys Cloud Settings</h1>
-          </div>
-          <StatusPill status={configResponse.config.lastConnectionStatus} />
-        </header>
+      {error && (
+        <div className="alert error">
+          <X size={16} />
+          {error}
+        </div>
+      )}
+      {toast && (
+        <div className="alert success" onAnimationEnd={() => setToast("")}>
+          <CheckCircle2 size={16} />
+          {toast}
+        </div>
+      )}
 
-        {error && (
-          <div className="alert error">
-            <X size={16} />
-            {error}
-          </div>
-        )}
-        {toast && (
-          <div className="alert success" onAnimationEnd={() => setToast("")}>
-            <CheckCircle2 size={16} />
-            {toast}
-          </div>
-        )}
+      {tab === "integration" ? (
+        <form className="content-grid" onSubmit={saveConfig}>
+          <section className="summary-band">
+            <SummaryItem
+              label="Status"
+              value={configResponse.config.lastConnectionStatus.replace(
+                "_",
+                " ",
+              )}
+            />
+            <SummaryItem
+              label="Region"
+              value={activeRegionPreview?.name || "-"}
+            />
+            <SummaryItem
+              label="Region Code"
+              value={activeRegionPreview?.id || "-"}
+            />
+            <SummaryItem
+              label="Schema"
+              value={configResponse.config.schemaStatus.replace("_", " ")}
+            />
+            <SummaryItem
+              label="Last Sync"
+              value={formatDate(configResponse.config.lastSyncAt)}
+            />
+          </section>
 
-        {tab === "integration" ? (
-          <form className="content-grid" onSubmit={saveConfig}>
-            <section className="summary-band">
-              <SummaryItem
-                label="Status"
-                value={configResponse.config.lastConnectionStatus.replace(
-                  "_",
-                  " ",
-                )}
+          <section className="settings-panel">
+            <SectionTitle title="Integration" />
+            <label className="toggle-row">
+              <input
+                type="checkbox"
+                checked={configDraft.enabled ?? false}
+                onChange={(event) =>
+                  setConfigDraft({
+                    ...configDraft,
+                    enabled: event.target.checked,
+                  })
+                }
               />
-              <SummaryItem
-                label="Region"
-                value={activeRegionPreview?.name || "-"}
-              />
-              <SummaryItem
-                label="Region Code"
-                value={activeRegionPreview?.id || "-"}
-              />
-              <SummaryItem
-                label="Schema"
-                value={configResponse.config.schemaStatus.replace("_", " ")}
-              />
-              <SummaryItem
-                label="Last Sync"
-                value={formatDate(configResponse.config.lastSyncAt)}
-              />
-            </section>
+              <span>Enabled</span>
+            </label>
+          </section>
 
-            <section className="settings-panel">
-              <SectionTitle title="Integration" />
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={configDraft.enabled ?? false}
+          <section className="settings-panel">
+            <SectionTitle title="Region" />
+            <div className="field-grid">
+              <label>
+                <span>Genesys Region</span>
+                <select
+                  value={configDraft.regionId}
                   onChange={(event) =>
                     setConfigDraft({
                       ...configDraft,
-                      enabled: event.target.checked,
+                      regionId: event.target.value,
+                    })
+                  }
+                >
+                  {configResponse.enabledRegions.map((region) => (
+                    <option key={region.id} value={region.id}>
+                      {region.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <ReadOnly label="Region Code" value={activeRegionPreview?.id} />
+              <ReadOnly
+                label="Application"
+                value={activeRegionPreview?.applicationUrl}
+              />
+              <ReadOnly label="API" value={activeRegionPreview?.apiBaseUrl} />
+              <ReadOnly
+                label="OAuth"
+                value={activeRegionPreview?.authBaseUrl}
+              />
+            </div>
+            <div className="button-row">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() =>
+                  activeRegionPreview && openEditor(activeRegionPreview.id)
+                }
+              >
+                <Pencil size={16} />
+                Edit Region URLs
+              </button>
+              {activeRegionPreview && (
+                <a
+                  className="secondary link-button"
+                  href={activeRegionPreview.applicationUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <ExternalLink size={16} />
+                  Open Genesys Cloud
+                </a>
+              )}
+            </div>
+          </section>
+
+          <section className="settings-panel">
+            <SectionTitle title="OAuth" />
+            <div className="field-grid">
+              <label>
+                <span>Client ID</span>
+                <input
+                  value={configDraft.clientId ?? ""}
+                  onChange={(event) =>
+                    setConfigDraft({
+                      ...configDraft,
+                      clientId: event.target.value,
                     })
                   }
                 />
-                <span>Enabled</span>
               </label>
-            </section>
-
-            <section className="settings-panel">
-              <SectionTitle title="Region" />
-              <div className="field-grid">
-                <label>
-                  <span>Genesys Region</span>
-                  <select
-                    value={configDraft.regionId}
-                    onChange={(event) =>
-                      setConfigDraft({
-                        ...configDraft,
-                        regionId: event.target.value,
-                      })
-                    }
-                  >
-                    {configResponse.enabledRegions.map((region) => (
-                      <option key={region.id} value={region.id}>
-                        {region.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <ReadOnly label="Region Code" value={activeRegionPreview?.id} />
-                <ReadOnly
-                  label="Application"
-                  value={activeRegionPreview?.applicationUrl}
-                />
-                <ReadOnly label="API" value={activeRegionPreview?.apiBaseUrl} />
-                <ReadOnly
-                  label="OAuth"
-                  value={activeRegionPreview?.authBaseUrl}
-                />
-              </div>
-              <div className="button-row">
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() =>
-                    activeRegionPreview && openEditor(activeRegionPreview.id)
+              <label>
+                <span>Client Secret</span>
+                <input
+                  type="password"
+                  placeholder={
+                    configResponse.config.secretConfigured
+                      ? "Secret configured"
+                      : ""
                   }
-                >
-                  <Pencil size={16} />
-                  Edit Region URLs
-                </button>
-                {activeRegionPreview && (
-                  <a
-                    className="secondary link-button"
-                    href={activeRegionPreview.applicationUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <ExternalLink size={16} />
-                    Open Genesys Cloud
-                  </a>
-                )}
-              </div>
-            </section>
-
-            <section className="settings-panel">
-              <SectionTitle title="OAuth" />
-              <div className="field-grid">
-                <label>
-                  <span>Client ID</span>
-                  <input
-                    value={configDraft.clientId ?? ""}
-                    onChange={(event) =>
-                      setConfigDraft({
-                        ...configDraft,
-                        clientId: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>Client Secret</span>
-                  <input
-                    type="password"
-                    placeholder={
-                      configResponse.config.secretConfigured
-                        ? "Secret configured"
-                        : ""
-                    }
-                    value={configDraft.clientSecret ?? ""}
-                    onChange={(event) =>
-                      setConfigDraft({
-                        ...configDraft,
-                        clientSecret: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-              </div>
-            </section>
-
-            <section className="settings-panel">
-              <SectionTitle title="Outbound" />
-              <div className="field-grid">
-                <label>
-                  <span>Contact List Name</span>
-                  <select
-                    value={configDraft.contactListId ?? ""}
-                    onChange={(event) => {
-                      const item = contactLists.find(
-                        (list) => list.id === event.target.value,
-                      );
-                      setConfigDraft({
-                        ...configDraft,
-                        contactListId: item?.id || "",
-                        contactListName: item?.name || "",
-                      });
-                      setSchemaResult(null);
-                      setContactReview(null);
-                    }}
-                  >
-                    <option value="">Select contact list</option>
-                    {configDraft.contactListId &&
-                      !contactLists.some(
-                        (list) => list.id === configDraft.contactListId,
-                      ) && (
-                        <option value={configDraft.contactListId}>
-                          {configDraft.contactListName ||
-                            configDraft.contactListId}{" "}
-                          (saved)
-                        </option>
-                      )}
-                    {contactLists.map((list) => (
-                      <option key={list.id} value={list.id}>
-                        {list.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>Contact List ID</span>
-                  <input
-                    value={configDraft.contactListId ?? ""}
-                    onChange={(event) => {
-                      const id = contactListIdFromInput(event.target.value);
-                      setConfigDraft({
-                        ...configDraft,
-                        contactListId: id,
-                        contactListName:
-                          id === configDraft.contactListId
-                            ? configDraft.contactListName
-                            : "",
-                      });
-                      setSchemaResult(null);
-                      setContactReview(null);
-                    }}
-                  />
-                  <small className="muted">
-                    Use the UUID from the Genesys Contact List URL, not its
-                    name. Selecting a list above fills this field automatically.
-                  </small>
-                </label>
-                <label>
-                  <span>Phone Column</span>
-                  <input
-                    value={configDraft.phoneColumn ?? ""}
-                    onChange={(event) =>
-                      setConfigDraft({
-                        ...configDraft,
-                        phoneColumn: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-              </div>
-            </section>
-
-            <section className="settings-panel">
-              <SectionTitle title="Review Contact List" />
-              <div className="field-grid">
-                <label>
-                  <span>Source campaign</span>
-                  <select
-                    value={campaignId}
-                    onChange={(event) => {
-                      setCampaignId(event.target.value);
-                      setContactReview(null);
-                    }}
-                  >
-                    <option value="">All policies</option>
-                    {campaigns.map((campaign) => (
-                      <option
-                        key={campaign.campaignListId}
-                        value={campaign.campaignListId}
-                      >
-                        {campaign.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="button-row">
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={reviewContacts}
-                  disabled={Boolean(busy)}
-                >
-                  <Search size={16} />
-                  Review target and contacts
-                </button>
-              </div>
-              {contactReview && (
-                <div className="contact-review">
-                  <div className="review-target">
-                    <strong>Genesys destination</strong>
-                    <span>{contactReview.target.name}</span>
-                    <code>{contactReview.target.id}</code>
-                    <small>
-                      Columns:{" "}
-                      {contactReview.target.columnNames?.join(", ") ||
-                        "None reported"}
-                    </small>
-                  </div>
-                  <div className="review-counts">
-                    <SummaryItem
-                      label="Matched"
-                      value={String(contactReview.preview.summary.matched)}
-                    />
-                    <SummaryItem
-                      label="Eligible"
-                      value={String(contactReview.preview.summary.eligible)}
-                    />
-                    <SummaryItem
-                      label="DNC"
-                      value={String(contactReview.preview.summary.dncExcluded)}
-                    />
-                    <SummaryItem
-                      label="Invalid phone"
-                      value={String(contactReview.preview.summary.invalidPhone)}
-                    />
-                    <SummaryItem
-                      label="Duplicate"
-                      value={String(
-                        contactReview.preview.summary.duplicatePhone,
-                      )}
-                    />
-                    <SummaryItem
-                      label="Already synced"
-                      value={String(
-                        contactReview.preview.summary.alreadySynced,
-                      )}
-                    />
-                  </div>
-                  <p className="muted">
-                    Only Eligible contacts are selected for sync. Review does not
-                    send data to Genesys.
-                  </p>
-                  <div className="review-table-wrap">
-                    <table className="review-table">
-                      <thead>
-                        <tr>
-                          <th>Customer</th>
-                          <th>Phone</th>
-                          <th>Policy</th>
-                          <th>Product</th>
-                          <th>Eligibility</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {contactReview.preview.rows.map((row, index) => (
-                          <tr key={`${row.contact.policyNumber}-${index}`}>
-                            <td>
-                              {row.contact.firstName} {row.contact.lastName}
-                            </td>
-                            <td>{row.contact.phone}</td>
-                            <td>{row.contact.policyNumber}</td>
-                            <td>{row.contact.productName}</td>
-                            <td>{row.eligibility.replaceAll("_", " ")}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </section>
-
-            <section className="settings-panel">
-              <SectionTitle title="Connection" />
-              <div className="status-grid">
-                <StatusRow
-                  label="OAuth"
-                  done={
-                    configResponse.config.lastConnectionStatus === "SUCCESS"
+                  value={configDraft.clientSecret ?? ""}
+                  onChange={(event) =>
+                    setConfigDraft({
+                      ...configDraft,
+                      clientSecret: event.target.value,
+                    })
                   }
                 />
-                <StatusRow
-                  label="Platform API"
-                  done={
-                    configResponse.config.lastConnectionStatus === "SUCCESS"
-                  }
-                />
-                <StatusRow
-                  label="Contact List"
-                  done={Boolean(configResponse.config.contactListId)}
-                />
-                <StatusRow
-                  label="Schema"
-                  done={configResponse.config.schemaStatus === "VALID"}
-                />
-              </div>
-              {schemaResult && (
-                <div className="schema-report">
-                  <h3>Contact List Schema</h3>
-                  <p>{schemaResult.message}</p>
-                  <div className="schema-table">
-                    <div>
-                      <b>Application field</b>
-                      <b>Genesys column</b>
-                      <b>Status</b>
-                    </div>
-                    {schemaResult.mapping.map((row) => (
-                      <div key={row.applicationField}>
-                        <span>{row.applicationField}</span>
-                        <span>{row.genesysColumn || "—"}</span>
-                        <strong
-                          className={
-                            row.status === "OK" ? "schema-ok" : "schema-bad"
-                          }
-                        >
-                          {row.status}
-                        </strong>
-                      </div>
-                    ))}
-                  </div>
-                  {schemaResult.unexpectedColumns.length > 0 && (
-                    <p>
-                      Extra Genesys columns:{" "}
-                      {schemaResult.unexpectedColumns.join(", ")}
-                    </p>
-                  )}
-                </div>
-              )}
-              <p className="muted">
-                Last tested:{" "}
-                {formatDate(configResponse.config.lastConnectionAt)}
-              </p>
-              <div className="button-row">
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={testConnection}
-                  disabled={Boolean(busy)}
-                >
-                  <RefreshCcw size={16} />
-                  Test Connection
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={loadContactLists}
-                  disabled={Boolean(busy)}
-                >
-                  <RefreshCcw size={16} />
-                  Load Contact Lists
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={validateSchema}
-                  disabled={Boolean(busy)}
-                >
-                  <CheckCircle2 size={16} />
-                  Validate Schema
-                </button>
-                <button className="primary" disabled={Boolean(busy)}>
-                  <Save size={16} />
-                  Save Configuration
-                </button>
-              </div>
-            </section>
-          </form>
-        ) : (
-          <section className="regions-view">
-            <div className="table-actions">
-              <h2>Genesys Cloud Regions</h2>
-              <button
-                className="primary"
-                onClick={() =>
-                  setEditor({
-                    mode: "create",
-                    region: emptyCustomRegion,
-                    history: [],
-                  })
-                }
-              >
-                <Plus size={16} />
-                Add Custom Region
-              </button>
-            </div>
-            <div className="region-table">
-              {regions.map((region) => (
-                <article key={region.id} className="region-row">
-                  <div>
-                    <strong>{region.name}</strong>
-                    <span>{region.domain}</span>
-                  </div>
-                  <code>{region.id}</code>
-                  <StatusBadge enabled={region.enabled} />
-                  <span
-                    className={region.modified ? "badge modified" : "badge"}
-                  >
-                    {region.modified ? "Modified" : "Default"}
-                  </span>
-                  <div className="row-actions">
-                    <button
-                      className="icon-button"
-                      title="Edit"
-                      onClick={() => openEditor(region.id)}
-                    >
-                      <Pencil size={17} />
-                    </button>
-                    {!region.systemRegion && (
-                      <button
-                        className="icon-button danger"
-                        title="Delete"
-                        onClick={() => deleteRegion(region)}
-                      >
-                        <Trash2 size={17} />
-                      </button>
-                    )}
-                  </div>
-                </article>
-              ))}
+              </label>
             </div>
           </section>
-        )}
-      </section>
+
+          <section className="settings-panel">
+            <SectionTitle title="Outbound" />
+            <div className="field-grid">
+              <label>
+                <span>Contact List Name</span>
+                <select
+                  value={configDraft.contactListId ?? ""}
+                  onChange={(event) => {
+                    const item = contactLists.find(
+                      (list) => list.id === event.target.value,
+                    );
+                    setConfigDraft({
+                      ...configDraft,
+                      contactListId: item?.id || "",
+                      contactListName: item?.name || "",
+                    });
+                    setSchemaResult(null);
+                    setContactReview(null);
+                  }}
+                >
+                  <option value="">Select contact list</option>
+                  {configDraft.contactListId &&
+                    !contactLists.some(
+                      (list) => list.id === configDraft.contactListId,
+                    ) && (
+                      <option value={configDraft.contactListId}>
+                        {configDraft.contactListName ||
+                          configDraft.contactListId}{" "}
+                        (saved)
+                      </option>
+                    )}
+                  {contactLists.map((list) => (
+                    <option key={list.id} value={list.id}>
+                      {list.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Contact List ID</span>
+                <input
+                  value={configDraft.contactListId ?? ""}
+                  onChange={(event) => {
+                    const id = contactListIdFromInput(event.target.value);
+                    setConfigDraft({
+                      ...configDraft,
+                      contactListId: id,
+                      contactListName:
+                        id === configDraft.contactListId
+                          ? configDraft.contactListName
+                          : "",
+                    });
+                    setSchemaResult(null);
+                    setContactReview(null);
+                  }}
+                />
+                <small className="muted">
+                  Use the UUID from the Genesys Contact List URL, not its name.
+                  Selecting a list above fills this field automatically.
+                </small>
+              </label>
+              <label>
+                <span>Phone Column</span>
+                <input
+                  value={configDraft.phoneColumn ?? ""}
+                  onChange={(event) =>
+                    setConfigDraft({
+                      ...configDraft,
+                      phoneColumn: event.target.value,
+                    })
+                  }
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="settings-panel">
+            <SectionTitle title="Review Contact List" />
+            <div className="field-grid">
+              <label>
+                <span>Source campaign</span>
+                <select
+                  value={campaignId}
+                  onChange={(event) => {
+                    setCampaignId(event.target.value);
+                    setContactReview(null);
+                  }}
+                >
+                  <option value="">All policies</option>
+                  {campaigns.map((campaign) => (
+                    <option
+                      key={campaign.campaignListId}
+                      value={campaign.campaignListId}
+                    >
+                      {campaign.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="button-row">
+              <button
+                type="button"
+                className="secondary"
+                onClick={reviewContacts}
+                disabled={Boolean(busy)}
+              >
+                <Search size={16} />
+                Review target and contacts
+              </button>
+            </div>
+            {contactReview && (
+              <div className="contact-review">
+                <div className="review-target">
+                  <strong>Genesys destination</strong>
+                  <span>{contactReview.target.name}</span>
+                  <code>{contactReview.target.id}</code>
+                  <small>
+                    Columns:{" "}
+                    {contactReview.target.columnNames?.join(", ") ||
+                      "None reported"}
+                  </small>
+                </div>
+                <div className="review-counts">
+                  <SummaryItem
+                    label="Matched"
+                    value={String(contactReview.preview.summary.matched)}
+                  />
+                  <SummaryItem
+                    label="Eligible"
+                    value={String(contactReview.preview.summary.eligible)}
+                  />
+                  <SummaryItem
+                    label="DNC"
+                    value={String(contactReview.preview.summary.dncExcluded)}
+                  />
+                  <SummaryItem
+                    label="Invalid phone"
+                    value={String(contactReview.preview.summary.invalidPhone)}
+                  />
+                  <SummaryItem
+                    label="Duplicate"
+                    value={String(contactReview.preview.summary.duplicatePhone)}
+                  />
+                  <SummaryItem
+                    label="Already synced"
+                    value={String(contactReview.preview.summary.alreadySynced)}
+                  />
+                </div>
+                <p className="muted">
+                  Only Eligible contacts are selected for sync. Review does not
+                  send data to Genesys.
+                </p>
+                <div className="review-table-wrap">
+                  <table className="review-table">
+                    <thead>
+                      <tr>
+                        <th>Customer</th>
+                        <th>Phone</th>
+                        <th>Policy</th>
+                        <th>Product</th>
+                        <th>Eligibility</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {contactReview.preview.rows.map((row, index) => (
+                        <tr key={`${row.contact.policyNumber}-${index}`}>
+                          <td>
+                            {row.contact.firstName} {row.contact.lastName}
+                          </td>
+                          <td>{row.contact.phone}</td>
+                          <td>{row.contact.policyNumber}</td>
+                          <td>{row.contact.productName}</td>
+                          <td>{row.eligibility.replaceAll("_", " ")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="settings-panel">
+            <SectionTitle title="Connection" />
+            <div className="status-grid">
+              <StatusRow
+                label="OAuth"
+                done={configResponse.config.lastConnectionStatus === "SUCCESS"}
+              />
+              <StatusRow
+                label="Platform API"
+                done={configResponse.config.lastConnectionStatus === "SUCCESS"}
+              />
+              <StatusRow
+                label="Contact List"
+                done={Boolean(configResponse.config.contactListId)}
+              />
+              <StatusRow
+                label="Schema"
+                done={configResponse.config.schemaStatus === "VALID"}
+              />
+            </div>
+            {schemaResult && (
+              <div className="schema-report">
+                <h3>Contact List Schema</h3>
+                <p>{schemaResult.message}</p>
+                <div className="schema-table">
+                  <div>
+                    <b>Application field</b>
+                    <b>Genesys column</b>
+                    <b>Status</b>
+                  </div>
+                  {schemaResult.mapping.map((row) => (
+                    <div key={row.applicationField}>
+                      <span>{row.applicationField}</span>
+                      <span>{row.genesysColumn || "—"}</span>
+                      <strong
+                        className={
+                          row.status === "OK" ? "schema-ok" : "schema-bad"
+                        }
+                      >
+                        {row.status}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+                {schemaResult.unexpectedColumns.length > 0 && (
+                  <p>
+                    Extra Genesys columns:{" "}
+                    {schemaResult.unexpectedColumns.join(", ")}
+                  </p>
+                )}
+              </div>
+            )}
+            <p className="muted">
+              Last tested: {formatDate(configResponse.config.lastConnectionAt)}
+            </p>
+            <div className="button-row">
+              <button
+                type="button"
+                className="secondary"
+                onClick={testConnection}
+                disabled={Boolean(busy)}
+              >
+                <RefreshCcw size={16} />
+                Test Connection
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={loadContactLists}
+                disabled={Boolean(busy)}
+              >
+                <RefreshCcw size={16} />
+                Load Contact Lists
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={validateSchema}
+                disabled={Boolean(busy)}
+              >
+                <CheckCircle2 size={16} />
+                Validate Schema
+              </button>
+              <button className="primary" disabled={Boolean(busy)}>
+                <Save size={16} />
+                Save Configuration
+              </button>
+            </div>
+          </section>
+        </form>
+      ) : tab === "regions" ? (
+        <section className="regions-view">
+          <div className="table-actions">
+            <h2>Genesys Cloud Regions</h2>
+            <button
+              className="primary"
+              onClick={() =>
+                setEditor({
+                  mode: "create",
+                  region: emptyCustomRegion,
+                  history: [],
+                })
+              }
+            >
+              <Plus size={16} />
+              Add Custom Region
+            </button>
+          </div>
+          <div className="region-table">
+            {regions.map((region) => (
+              <article key={region.id} className="region-row">
+                <div>
+                  <strong>{region.name}</strong>
+                  <span>{region.domain}</span>
+                </div>
+                <code>{region.id}</code>
+                <StatusBadge enabled={region.enabled} />
+                <span className={region.modified ? "badge modified" : "badge"}>
+                  {region.modified ? "Modified" : "Default"}
+                </span>
+                <div className="row-actions">
+                  <button
+                    className="icon-button"
+                    title="Edit"
+                    onClick={() => openEditor(region.id)}
+                  >
+                    <Pencil size={17} />
+                  </button>
+                  {!region.systemRegion && (
+                    <button
+                      className="icon-button danger"
+                      title="Delete"
+                      onClick={() => deleteRegion(region)}
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <Scheduler campaigns={campaigns} />
+      )}
 
       {editor && (
         <RegionModal
@@ -914,7 +918,523 @@ export function App() {
           busy={busy}
         />
       )}
-    </main>
+    </div>
+  );
+}
+
+const scheduleDays = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+function tomorrowInBangkok(): string {
+  const local = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  local.setUTCDate(local.getUTCDate() + 1);
+  return local.toISOString().slice(0, 10);
+}
+
+function scheduleDraft(task: ScheduleTask): ScheduleDraft {
+  return {
+    name: task.name,
+    campaignListId: task.campaignListId,
+    frequency: task.frequency,
+    time: task.time,
+    date: task.date,
+    dayOfWeek: task.dayOfWeek,
+    enabled: task.enabled,
+  };
+}
+
+function scheduleDate(value: string): string {
+  if (!value) return "-";
+  return new Date(value).toLocaleString("en-GB", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function scheduleDescription(task: ScheduleTask): string {
+  if (task.frequency === "ONCE") return `${task.date} at ${task.time}`;
+  if (task.frequency === "WEEKLY")
+    return `Every ${scheduleDays[task.dayOfWeek ?? 0]} at ${task.time}`;
+  return `Every day at ${task.time}`;
+}
+
+function Scheduler({ campaigns }: { campaigns: Campaign[] }) {
+  const [tasks, setTasks] = useState<ScheduleTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
+  const [editor, setEditor] = useState<{
+    id?: string;
+    draft: ScheduleDraft;
+  } | null>(null);
+
+  async function load(silent = false) {
+    if (!silent) setLoading(true);
+    try {
+      const result = await api<{ items: ScheduleTask[] }>(
+        "/api/admin/genesys/schedules",
+      );
+      setTasks(result.items);
+      setError("");
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to load tasks",
+      );
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    const timer = window.setInterval(() => void load(true), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  function createTask() {
+    setEditor({
+      draft: {
+        name: "",
+        campaignListId: campaigns[0]?.campaignListId ?? "",
+        frequency: "DAILY",
+        time: "09:00",
+        date: tomorrowInBangkok(),
+        dayOfWeek: 1,
+        enabled: true,
+      },
+    });
+  }
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!editor) return;
+    setBusy("save");
+    setError("");
+    try {
+      await api(
+        editor.id
+          ? `/api/admin/genesys/schedules/${editor.id}`
+          : "/api/admin/genesys/schedules",
+        {
+          method: editor.id ? "PUT" : "POST",
+          body: JSON.stringify(editor.draft),
+        },
+      );
+      setEditor(null);
+      setToast(
+        editor.id ? "Scheduler task updated." : "Scheduler task created.",
+      );
+      await load(true);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to save task",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function toggle(task: ScheduleTask) {
+    setBusy(`toggle-${task.schedulerTaskId}`);
+    setError("");
+    try {
+      await api(`/api/admin/genesys/schedules/${task.schedulerTaskId}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          ...scheduleDraft(task),
+          enabled: !task.enabled,
+        }),
+      });
+      setToast(
+        task.enabled ? "Scheduler task paused." : "Scheduler task enabled.",
+      );
+      await load(true);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to update task",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runNow(task: ScheduleTask) {
+    if (!window.confirm(`Run ${task.name} now?`)) return;
+    setBusy(`run-${task.schedulerTaskId}`);
+    setError("");
+    try {
+      await api(`/api/admin/genesys/schedules/${task.schedulerTaskId}/run`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      setToast("Auto Sync completed.");
+      await load(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Auto Sync failed");
+      await load(true);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function remove(task: ScheduleTask) {
+    if (!window.confirm(`Delete scheduler task ${task.name}?`)) return;
+    setBusy(`delete-${task.schedulerTaskId}`);
+    setError("");
+    try {
+      await api(`/api/admin/genesys/schedules/${task.schedulerTaskId}`, {
+        method: "DELETE",
+      });
+      setToast("Scheduler task deleted.");
+      await load(true);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to delete task",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const enabled = tasks.filter((task) => task.enabled).length;
+  const running = tasks.filter(
+    (task) => task.lastRunStatus === "RUNNING",
+  ).length;
+  const nextRun = tasks.find(
+    (task) => task.enabled && task.nextRunAt,
+  )?.nextRunAt;
+
+  return (
+    <section className="scheduler-view">
+      {error && (
+        <div className="alert error">
+          <X size={16} />
+          {error}
+        </div>
+      )}
+      {toast && (
+        <div className="alert success" onAnimationEnd={() => setToast("")}>
+          <CheckCircle2 size={16} />
+          {toast}
+        </div>
+      )}
+      <div className="summary-band scheduler-summary">
+        <SummaryItem label="Tasks" value={String(tasks.length)} />
+        <SummaryItem label="Enabled" value={String(enabled)} />
+        <SummaryItem label="Running" value={String(running)} />
+        <SummaryItem label="Time zone" value="Asia/Bangkok" />
+        <SummaryItem
+          label="Next run"
+          value={nextRun ? scheduleDate(nextRun) : "-"}
+        />
+      </div>
+      <section className="settings-panel scheduler-panel">
+        <div className="table-actions">
+          <div>
+            <h2>Auto Sync tasks</h2>
+            <p className="muted">
+              Each task loads the latest eligible contacts from its source
+              campaign.
+            </p>
+          </div>
+          <button
+            className="primary"
+            onClick={createTask}
+            disabled={!campaigns.length}
+          >
+            <Plus size={16} /> Add task
+          </button>
+        </div>
+        {!campaigns.length && (
+          <div className="alert error">
+            Create a source campaign before adding a scheduler task.
+          </div>
+        )}
+        {loading ? (
+          <div className="scheduler-loading">
+            <Loader2 className="spin" /> Loading tasks...
+          </div>
+        ) : tasks.length ? (
+          <div className="schedule-table-wrap">
+            <table className="schedule-table">
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th>Source campaign</th>
+                  <th>Schedule</th>
+                  <th>Next run</th>
+                  <th>Last result</th>
+                  <th>Enabled</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.map((task) => {
+                  const campaign = campaigns.find(
+                    (item) => item.campaignListId === task.campaignListId,
+                  );
+                  return (
+                    <tr key={task.schedulerTaskId}>
+                      <td>
+                        <strong>{task.name}</strong>
+                        <small>{task.schedulerTaskId}</small>
+                      </td>
+                      <td>{campaign?.name || task.campaignListId}</td>
+                      <td>{scheduleDescription(task)}</td>
+                      <td>
+                        {task.enabled ? scheduleDate(task.nextRunAt) : "Paused"}
+                      </td>
+                      <td>
+                        <span
+                          className={`schedule-status ${task.lastRunStatus.toLowerCase()}`}
+                        >
+                          {task.lastRunStatus}
+                        </span>
+                        <small title={task.lastRunMessage}>
+                          {task.lastRunAt
+                            ? scheduleDate(task.lastRunAt)
+                            : "Not run yet"}
+                          {task.lastRunSummary
+                            ? ` · ${task.lastRunSummary.successful}/${task.lastRunSummary.processed} synced`
+                            : ""}
+                        </small>
+                      </td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          aria-label={`${task.enabled ? "Disable" : "Enable"} ${task.name}`}
+                          checked={task.enabled}
+                          disabled={Boolean(busy)}
+                          onChange={() => toggle(task)}
+                        />
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            className="icon-button"
+                            title="Run now"
+                            disabled={Boolean(busy)}
+                            onClick={() => runNow(task)}
+                          >
+                            {busy === `run-${task.schedulerTaskId}` ? (
+                              <Loader2 className="spin" size={16} />
+                            ) : (
+                              <Play size={16} />
+                            )}
+                          </button>
+                          <button
+                            className="icon-button"
+                            title="Edit task"
+                            disabled={Boolean(busy)}
+                            onClick={() =>
+                              setEditor({
+                                id: task.schedulerTaskId,
+                                draft: scheduleDraft(task),
+                              })
+                            }
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            className="icon-button danger"
+                            title="Delete task"
+                            disabled={Boolean(busy)}
+                            onClick={() => remove(task)}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="scheduler-empty">
+            <Clock3 size={28} />
+            <strong>No Auto Sync tasks</strong>
+            <span>Create a task to synchronize a campaign on a schedule.</span>
+          </div>
+        )}
+      </section>
+
+      {editor && (
+        <div className="modal-backdrop">
+          <form className="modal schedule-modal" onSubmit={save}>
+            <header>
+              <div>
+                <span className="eyebrow">Auto Sync</span>
+                <h2>
+                  {editor.id ? "Edit scheduler task" : "Add scheduler task"}
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                title="Close"
+                onClick={() => setEditor(null)}
+              >
+                <X size={18} />
+              </button>
+            </header>
+            <div className="field-grid">
+              <label>
+                <span>Task name</span>
+                <input
+                  required
+                  maxLength={120}
+                  value={editor.draft.name}
+                  onChange={(event) =>
+                    setEditor({
+                      ...editor,
+                      draft: { ...editor.draft, name: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label>
+                <span>Source campaign</span>
+                <select
+                  required
+                  value={editor.draft.campaignListId}
+                  onChange={(event) =>
+                    setEditor({
+                      ...editor,
+                      draft: {
+                        ...editor.draft,
+                        campaignListId: event.target.value,
+                      },
+                    })
+                  }
+                >
+                  <option value="">Select campaign</option>
+                  {campaigns.map((campaign) => (
+                    <option
+                      key={campaign.campaignListId}
+                      value={campaign.campaignListId}
+                    >
+                      {campaign.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Frequency</span>
+                <select
+                  value={editor.draft.frequency}
+                  onChange={(event) =>
+                    setEditor({
+                      ...editor,
+                      draft: {
+                        ...editor.draft,
+                        frequency: event.target.value as ScheduleFrequency,
+                      },
+                    })
+                  }
+                >
+                  <option value="ONCE">Run once</option>
+                  <option value="DAILY">Daily</option>
+                  <option value="WEEKLY">Weekly</option>
+                </select>
+              </label>
+              {editor.draft.frequency === "ONCE" && (
+                <label>
+                  <span>Run date</span>
+                  <input
+                    required
+                    type="date"
+                    value={editor.draft.date || ""}
+                    onChange={(event) =>
+                      setEditor({
+                        ...editor,
+                        draft: { ...editor.draft, date: event.target.value },
+                      })
+                    }
+                  />
+                </label>
+              )}
+              {editor.draft.frequency === "WEEKLY" && (
+                <label>
+                  <span>Day of week</span>
+                  <select
+                    value={editor.draft.dayOfWeek ?? 1}
+                    onChange={(event) =>
+                      setEditor({
+                        ...editor,
+                        draft: {
+                          ...editor.draft,
+                          dayOfWeek: Number(event.target.value),
+                        },
+                      })
+                    }
+                  >
+                    {scheduleDays.map((day, index) => (
+                      <option key={day} value={index}>
+                        {day}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label>
+                <span>Run time</span>
+                <input
+                  required
+                  type="time"
+                  value={editor.draft.time}
+                  onChange={(event) =>
+                    setEditor({
+                      ...editor,
+                      draft: { ...editor.draft, time: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="toggle-row inline">
+                <input
+                  type="checkbox"
+                  checked={editor.draft.enabled}
+                  onChange={(event) =>
+                    setEditor({
+                      ...editor,
+                      draft: { ...editor.draft, enabled: event.target.checked },
+                    })
+                  }
+                />
+                <span>Enabled</span>
+              </label>
+            </div>
+            <footer className="button-row right">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setEditor(null)}
+              >
+                Cancel
+              </button>
+              <button className="primary" disabled={Boolean(busy)}>
+                <Save size={16} /> {busy === "save" ? "Saving..." : "Save task"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -30,6 +30,7 @@ import {
   auditLog,
   campaigns,
   customers,
+  genesysScheduleTasks,
   inquiries,
   nextId,
   policies,
@@ -668,6 +669,7 @@ export async function resetDemoData(actor: string): Promise<void> {
   await policies.replaceAll(seedPolicies());
   await inquiries.replaceAll(seedInquiries());
   await campaigns.replaceAll(seedCampaignLists());
+  await genesysScheduleTasks.replaceAll([]);
   await audit("RESET_DEMO_DATA", actor);
 }
 

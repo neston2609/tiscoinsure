@@ -174,6 +174,34 @@ export interface CampaignList {
   lastGenesysSyncAt: string;
 }
 
+export type GenesysScheduleFrequency = "ONCE" | "DAILY" | "WEEKLY";
+export type GenesysScheduleRunStatus =
+  "NEVER" | "RUNNING" | "SUCCESS" | "PARTIAL" | "FAILED";
+
+export interface GenesysScheduleTask {
+  schedulerTaskId: string;
+  name: string;
+  campaignListId: string;
+  frequency: GenesysScheduleFrequency;
+  time: string;
+  date?: string;
+  dayOfWeek?: number;
+  enabled: boolean;
+  nextRunAt: string;
+  lastRunAt: string;
+  lastRunStatus: GenesysScheduleRunStatus;
+  lastRunMessage: string;
+  lastRunSummary: {
+    matched: number;
+    eligible: number;
+    processed: number;
+    successful: number;
+    failed: number;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AuditRecord {
   id: string;
   action: string;

@@ -5,6 +5,7 @@ import {
   ArrowRight,
   BarChart3,
   Check,
+  Clock3,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -262,7 +263,11 @@ function Login({
 }
 
 function AdminPortal({ username }: { username: string }) {
-  const key = window.location.pathname.split("/")[2] || "dashboard";
+  const pathParts = window.location.pathname.split("/");
+  const key = pathParts[2] || "dashboard";
+  const genesysSection = ["regions", "scheduler"].includes(pathParts[3])
+    ? pathParts[3]
+    : "integration";
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [searchResult, setSearchResult] = useState<{
@@ -285,18 +290,6 @@ function AdminPortal({ username }: { username: string }) {
     await api(`${base}/auth/logout`, { method: "POST" });
     window.location.href = "/backend/login";
   }
-  if (key === "genesys")
-    return (
-      <div className="genesys-admin">
-        <div className="genesys-exit">
-          <a href="/backend">← Back to dashboard</a>
-          <button onClick={logout}>
-            <LogOut size={15} /> Sign out
-          </button>
-        </div>
-        <GenesysSettings />
-      </div>
-    );
   return (
     <div className="admin-shell">
       <aside className={menuOpen ? "admin-sidebar open" : "admin-sidebar"}>
@@ -310,18 +303,54 @@ function AdminPortal({ username }: { username: string }) {
           <small>MANAGEMENT</small>
         </div>
         <nav>
-          {nav.map(({ key: itemKey, label, icon: Icon }) => (
-            <a
-              key={itemKey}
-              className={key === itemKey ? "active" : ""}
-              href={
-                itemKey === "dashboard" ? "/backend" : `/backend/${itemKey}`
-              }
-            >
-              <Icon size={18} />
-              {label}
-            </a>
-          ))}
+          {nav.map(({ key: itemKey, label, icon: Icon }) =>
+            itemKey === "genesys" ? (
+              <div className="admin-nav-group" key={itemKey}>
+                <a
+                  className={key === itemKey ? "active" : ""}
+                  href="/backend/genesys"
+                >
+                  <Icon size={18} />
+                  {label}
+                </a>
+                {key === "genesys" && (
+                  <div className="admin-subnav">
+                    <a
+                      className={
+                        genesysSection === "integration" ? "active" : ""
+                      }
+                      href="/backend/genesys"
+                    >
+                      <ShieldCheck size={15} /> Integration
+                    </a>
+                    <a
+                      className={genesysSection === "regions" ? "active" : ""}
+                      href="/backend/genesys/regions"
+                    >
+                      <Globe2 size={15} /> Regions
+                    </a>
+                    <a
+                      className={genesysSection === "scheduler" ? "active" : ""}
+                      href="/backend/genesys/scheduler"
+                    >
+                      <Clock3 size={15} /> Scheduler
+                    </a>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <a
+                key={itemKey}
+                className={key === itemKey ? "active" : ""}
+                href={
+                  itemKey === "dashboard" ? "/backend" : `/backend/${itemKey}`
+                }
+              >
+                <Icon size={18} />
+                {label}
+              </a>
+            ),
+          )}
         </nav>
         <div className="sidebar-bottom">
           <a href="/" target="_blank" rel="noreferrer">
@@ -343,7 +372,17 @@ function AdminPortal({ username }: { username: string }) {
           </button>
           <div className="admin-breadcrumb">
             MFEC Insurrance <ChevronRight size={14} />{" "}
-            <b>{titleFor[key] || "Management"}</b>
+            <b>
+              {titleFor[key] || "Management"}
+              {key === "genesys" &&
+                ` / ${
+                  genesysSection === "regions"
+                    ? "Regions"
+                    : genesysSection === "scheduler"
+                      ? "Scheduler"
+                      : "Integration"
+                }`}
+            </b>
           </div>
           <div className="admin-global-search">
             <Search size={17} />
@@ -402,6 +441,10 @@ function AdminPortal({ username }: { username: string }) {
             <Campaigns />
           ) : key === "inquiries" ? (
             <Inquiries />
+          ) : key === "genesys" ? (
+            <GenesysSettings
+              tab={genesysSection as "integration" | "regions" | "scheduler"}
+            />
           ) : key === "audit" ? (
             <Audit />
           ) : key === "settings" ? (

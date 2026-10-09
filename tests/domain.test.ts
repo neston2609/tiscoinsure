@@ -17,6 +17,7 @@ import {
 import { compareSchema } from "../server/services/genesys/genesys-sync.service";
 import { nextRenewalPeriod } from "../server/domain/renewal-date";
 import { THAI_PROVINCES } from "../src/lib/thai-provinces";
+import { nextGenesysRunAt } from "../server/services/genesys/genesys-scheduler.service";
 
 test("renewal adds a calendar year and clamps leap day", () => {
   assert.deepEqual(nextRenewalPeriod("2027-09-30"), {
@@ -34,6 +35,37 @@ test("customer province choices cover all 77 provinces", () => {
   assert.equal(new Set(THAI_PROVINCES).size, 77);
   assert.ok(THAI_PROVINCES.includes("กรุงเทพมหานคร"));
   assert.ok(THAI_PROVINCES.includes("บึงกาฬ"));
+});
+
+test("Genesys scheduler calculates Bangkok once, daily, and weekly runs", () => {
+  assert.equal(
+    nextGenesysRunAt(
+      { frequency: "DAILY", time: "09:30" },
+      new Date("2026-10-09T01:00:00.000Z"),
+    ),
+    "2026-10-09T02:30:00.000Z",
+  );
+  assert.equal(
+    nextGenesysRunAt(
+      { frequency: "DAILY", time: "09:30" },
+      new Date("2026-10-09T03:00:00.000Z"),
+    ),
+    "2026-10-10T02:30:00.000Z",
+  );
+  assert.equal(
+    nextGenesysRunAt(
+      { frequency: "WEEKLY", time: "09:00", dayOfWeek: 1 },
+      new Date("2026-10-09T03:00:00.000Z"),
+    ),
+    "2026-10-12T02:00:00.000Z",
+  );
+  assert.equal(
+    nextGenesysRunAt(
+      { frequency: "ONCE", time: "15:45", date: "2026-10-10" },
+      new Date("2026-10-09T03:00:00.000Z"),
+    ),
+    "2026-10-10T08:45:00.000Z",
+  );
 });
 
 test("normalizes Thai mobile numbers and rejects other formats", () => {

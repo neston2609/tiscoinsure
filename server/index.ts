@@ -14,6 +14,7 @@ import { initializeBusinessData } from "./domain/store";
 import { FileSessionStore } from "./middleware/file-session-store";
 import { genesysRegionService } from "./services/genesys/genesys-region.service";
 import { adminCredentials } from "./services/admin-credentials.service";
+import { genesysSchedulerService } from "./services/genesys/genesys-scheduler.service";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -127,6 +128,7 @@ app.use(
 await adminCredentials.initialize();
 await genesysRegionService.initialize();
 await initializeBusinessData();
+await genesysSchedulerService.start();
 
 app.listen(port, host, () => {
   console.log(`MFEC Insurrance listening on ${host}:${port}`);

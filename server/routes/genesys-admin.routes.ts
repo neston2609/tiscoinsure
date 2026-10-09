@@ -13,11 +13,73 @@ import {
 import { z } from "zod";
 import { mapCampaignContact } from "../domain/campaign-contact";
 import { customers, policies, products } from "../domain/store";
+import { genesysSchedulerService } from "../services/genesys/genesys-scheduler.service";
 
 export const genesysAdminRouter = Router();
 const configService = new GenesysConfigService();
 
 genesysAdminRouter.use(requireAdmin);
+
+const scheduleInput = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    campaignListId: z.string().trim().min(1).max(80),
+    frequency: z.enum(["ONCE", "DAILY", "WEEKLY"]),
+    time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Enter a valid time"),
+    date: z.iso.date().optional(),
+    dayOfWeek: z.number().int().min(0).max(6).optional(),
+    enabled: z.boolean(),
+  })
+  .superRefine((value, context) => {
+    if (value.frequency === "ONCE" && !value.date)
+      context.addIssue({
+        code: "custom",
+        path: ["date"],
+        message: "Choose a run date",
+      });
+    if (value.frequency === "WEEKLY" && value.dayOfWeek === undefined)
+      context.addIssue({
+        code: "custom",
+        path: ["dayOfWeek"],
+        message: "Choose a day of the week",
+      });
+  });
+
+genesysAdminRouter.get("/schedules", async (_request, response) => {
+  response.json({ items: await genesysSchedulerService.list() });
+});
+
+genesysAdminRouter.post("/schedules", async (request, response) => {
+  response
+    .status(201)
+    .json(
+      await genesysSchedulerService.create(
+        scheduleInput.parse(request.body),
+        request.user!.name,
+      ),
+    );
+});
+
+genesysAdminRouter.put("/schedules/:id", async (request, response) => {
+  response.json(
+    await genesysSchedulerService.update(
+      request.params.id,
+      scheduleInput.parse(request.body),
+      request.user!.name,
+    ),
+  );
+});
+
+genesysAdminRouter.post("/schedules/:id/run", async (request, response) => {
+  response.json(
+    await genesysSchedulerService.run(request.params.id, request.user!.name),
+  );
+});
+
+genesysAdminRouter.delete("/schedules/:id", async (request, response) => {
+  await genesysSchedulerService.delete(request.params.id, request.user!.name);
+  response.status(204).end();
+});
 
 genesysAdminRouter.get("/regions", async (_request, response, next) => {
   try {

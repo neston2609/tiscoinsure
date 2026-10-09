@@ -81,6 +81,7 @@ test(
 
       assert.equal((await request("/api/admin/customers")).status, 401);
       assert.equal((await request("/api/admin/genesys/config")).status, 401);
+      assert.equal((await request("/api/admin/genesys/schedules")).status, 401);
       const publicProducts = (await (
         await request("/api/public/products")
       ).json()) as { items: unknown[] };
@@ -346,6 +347,76 @@ test(
       const campaign = (await campaignResponse.json()) as {
         campaignListId: string;
       };
+      const scheduleResponse = await request(
+        "/api/admin/genesys/schedules",
+        "POST",
+        {
+          name: "Nightly renewal sync",
+          campaignListId: campaign.campaignListId,
+          frequency: "ONCE",
+          date: "2099-12-31",
+          time: "23:45",
+          enabled: true,
+        },
+        cookie,
+      );
+      assert.equal(
+        scheduleResponse.status,
+        201,
+        await scheduleResponse.clone().text(),
+      );
+      const schedule = (await scheduleResponse.json()) as {
+        schedulerTaskId: string;
+        nextRunAt: string;
+      };
+      assert.ok(schedule.nextRunAt.startsWith("2099-12-31T16:45:00"));
+      const scheduleList = await get<{ items: { schedulerTaskId: string }[] }>(
+        "/api/admin/genesys/schedules",
+      );
+      assert.ok(
+        scheduleList.items.some(
+          (item) => item.schedulerTaskId === schedule.schedulerTaskId,
+        ),
+      );
+      assert.equal(
+        (
+          await request(
+            `/api/admin/campaigns/${campaign.campaignListId}`,
+            "DELETE",
+            undefined,
+            cookie,
+          )
+        ).status,
+        409,
+      );
+      const updatedSchedule = await request(
+        `/api/admin/genesys/schedules/${schedule.schedulerTaskId}`,
+        "PUT",
+        {
+          name: "Paused renewal sync",
+          campaignListId: campaign.campaignListId,
+          frequency: "DAILY",
+          time: "09:15",
+          enabled: false,
+        },
+        cookie,
+      );
+      assert.equal(updatedSchedule.status, 200);
+      assert.equal(
+        ((await updatedSchedule.json()) as { nextRunAt: string }).nextRunAt,
+        "",
+      );
+      assert.equal(
+        (
+          await request(
+            `/api/admin/genesys/schedules/${schedule.schedulerTaskId}`,
+            "DELETE",
+            undefined,
+            cookie,
+          )
+        ).status,
+        204,
+      );
       const dashboard = await get<{ kpis: { totalCustomers: number } }>(
         "/api/admin/dashboard",
       );

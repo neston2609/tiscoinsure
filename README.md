@@ -17,19 +17,21 @@ Create a server-only `.env` from `.env.example` before `npm start`. Set persiste
 
 ## Routes
 
-| Path                                           | Purpose                                                  |
-| ---------------------------------------------- | -------------------------------------------------------- |
-| `/`                                            | Public homepage                                          |
-| `/products`, `/products/:slug`                 | Catalog, comparison, product detail                      |
-| `/recommend`                                   | Product recommendation wizard                            |
-| `/contact`                                     | Callback request                                         |
-| `/backend/login`                               | Admin login                                              |
-| `/backend`                                     | Dashboard                                                |
-| `/backend/customers`, `/backend/customers/:id` | Customer CRUD and 360 view                               |
-| `/backend/products`, `/backend/policies`       | Product and policy CRUD                                  |
-| `/backend/renewals`, `/backend/campaigns`      | Renewal and campaign management                          |
-| `/backend/inquiries`, `/backend/audit`         | Inquiries and audit                                      |
-| `/backend/genesys`, `/backend/settings`        | Genesys configuration, password change, and backup/reset |
+| Path                                           | Purpose                                    |
+| ---------------------------------------------- | ------------------------------------------ |
+| `/`                                            | Public homepage                            |
+| `/products`, `/products/:slug`                 | Catalog, comparison, product detail        |
+| `/recommend`                                   | Product recommendation wizard              |
+| `/contact`                                     | Callback request                           |
+| `/backend/login`                               | Admin login                                |
+| `/backend`                                     | Dashboard                                  |
+| `/backend/customers`, `/backend/customers/:id` | Customer CRUD and 360 view                 |
+| `/backend/products`, `/backend/policies`       | Product and policy CRUD                    |
+| `/backend/renewals`, `/backend/campaigns`      | Renewal and campaign management            |
+| `/backend/inquiries`, `/backend/audit`         | Inquiries and audit                        |
+| `/backend/genesys`, `/backend/genesys/regions` | Genesys integration and region management  |
+| `/backend/genesys/scheduler`                   | Genesys campaign Auto Sync task management |
+| `/backend/settings`                            | Password change, backup, and demo reset    |
 
 The public website cannot access `/api/admin/*`. Admin APIs use a signed, HTTP-only session cookie, same-origin checks on mutations, a login rate limit, and file-backed sessions. In production the cookie requires HTTPS. Changing the admin password requires the current password and invalidates all existing admin sessions. Client Secret and OAuth tokens are never returned to the browser.
 
@@ -59,6 +61,7 @@ The admin Settings page creates backups under `backups/` before download or demo
 2. Enter the OAuth Client ID and Client Secret for a Client Credentials integration, then save. The secret is encrypted at rest with `APP_SECRET` (AES-256-GCM). Test Connection checks OAuth and the outbound Contact Lists API. The OAuth client needs the Genesys outbound Contact List and Contact permissions required by the operations it will perform.
 3. Load Contact Lists, select one, and save. Set `phoneColumn` to the Genesys phone column (default `phone`). Validate Schema. The target list must have all 23 canonical columns with exact case and the phone column configured as a phone column; extra columns are reported but do not block sync.
 4. Preview a campaign or renewal group. DNC customers, invalid/duplicate phones, and unchanged contacts are excluded. Export a UTF-8 BOM/CRLF CSV, or confirm Sync to Genesys. The UI sends controlled batches and displays progress and failed IDs. Individual policies can be pushed from Policy Detail.
+5. Open Scheduler to create one or more Auto Sync tasks. Each task selects a saved source campaign and can run once, daily, or weekly in the `Asia/Bangkok` time zone. Tasks can be enabled, paused, edited, run immediately, or deleted. Every run re-evaluates the campaign so it uses the latest eligible contacts and records its last result. A campaign cannot be deleted while a scheduler task uses it.
 
 The server builds one canonical contact record for CSV and API. It sends `POST /api/v2/outbound/contactlists/{id}/contacts` only when there is no existing contact. For an existing changed contact it does GET, merges MFEC data into the complete Genesys contact, and PUTs it. It stores the Genesys Contact ID and a SHA-256 payload hash, and marks locally changed records `OUTDATED`. Network retries are limited to read/update operations; POST is not automatically retried to avoid duplicates after an ambiguous response.
 
@@ -105,4 +108,4 @@ The last request should return HTTP 401 without an admin session. `GET /api/heal
 
 ## Tests
 
-`npm test` covers Thai phone normalization, Bangkok-relative expiry, DNC/campaign preview, safe CSV encoding, Genesys schema comparison, mocked Genesys create/no-op/update/DNC/mismatch, password changes/session invalidation/restart persistence, and an isolated HTTP workflow for public requests, session auth, CRUD, campaign export, and backup redaction. The HTTP test uses temporary data directories and does not touch production JSON files.
+`npm test` covers Thai phone normalization, Bangkok-relative expiry and Genesys schedule calculation, DNC/campaign preview, safe CSV encoding, Genesys schema comparison, mocked Genesys create/no-op/update/DNC/mismatch, password changes/session invalidation/restart persistence, and an isolated HTTP workflow for public requests, session auth, CRUD, scheduler task management, campaign export, and backup redaction. The HTTP test uses temporary data directories and does not touch production JSON files.

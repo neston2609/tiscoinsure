@@ -9,6 +9,7 @@ import {
   audit,
   campaigns,
   customers,
+  genesysScheduleTasks,
   nextId,
   policies,
   products,
@@ -141,6 +142,14 @@ campaignRouter.put("/:id", async (request, response) => {
 });
 
 campaignRouter.delete("/:id", async (request, response) => {
+  const scheduled = (await genesysScheduleTasks.all()).find(
+    (task) => task.campaignListId === request.params.id,
+  );
+  if (scheduled)
+    throw httpError(
+      409,
+      `Campaign is used by scheduler task ${scheduled.name}. Update or delete that task first.`,
+    );
   await campaigns.mutate((rows) => {
     const index = rows.findIndex(
       (row) => row.campaignListId === request.params.id,

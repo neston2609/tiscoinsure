@@ -11,6 +11,7 @@ import type {
   AuditRecord,
   CampaignList,
   Customer,
+  GenesysScheduleTask,
   Inquiry,
   Policy,
   Product,
@@ -36,6 +37,10 @@ export const campaigns = new JsonRepository<CampaignList>(
   "campaign-lists.json",
   seedCampaignLists,
 );
+export const genesysScheduleTasks = new JsonRepository<GenesysScheduleTask>(
+  "genesys-schedule-tasks.json",
+  () => [],
+);
 export const auditLog = new JsonRepository<AuditRecord>(
   "audit-log.json",
   () => [],
@@ -46,6 +51,7 @@ export const businessRepositories = [
   policies,
   inquiries,
   campaigns,
+  genesysScheduleTasks,
   auditLog,
 ] as const;
 
