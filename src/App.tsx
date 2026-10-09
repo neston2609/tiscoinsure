@@ -694,7 +694,7 @@ export function App() {
                       value={String(contactReview.preview.summary.matched)}
                     />
                     <SummaryItem
-                      label="Ready"
+                      label="Eligible"
                       value={String(contactReview.preview.summary.eligible)}
                     />
                     <SummaryItem
@@ -719,7 +719,7 @@ export function App() {
                     />
                   </div>
                   <p className="muted">
-                    Only Ready contacts are eligible for sync. Review does not
+                    Only Eligible contacts are selected for sync. Review does not
                     send data to Genesys.
                   </p>
                   <div className="review-table-wrap">
