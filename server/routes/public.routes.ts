@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
-import { createInquiry, httpError } from "../domain/business";
+import {
+  createInquiry,
+  httpError,
+  renewPolicyByNumber,
+} from "../domain/business";
 import { products } from "../domain/store";
 
 export const publicRouter = Router();
@@ -67,6 +71,21 @@ publicRouter.post("/inquiries", inquiryLimiter, async (request, response) => {
   const item = await createInquiry(request.body);
   response.status(201).json({ inquiryId: item.inquiryId, status: item.status });
 });
+
+const renewalLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});
+publicRouter.post(
+  "/policies/renew",
+  renewalLimiter,
+  async (request, response) => {
+    response.setHeader("Cache-Control", "no-store");
+    response.json(await renewPolicyByNumber(request.body, "public-api"));
+  },
+);
 
 publicRouter.get("/faq", (_request, response) => {
   response.json([

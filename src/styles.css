@@ -72,7 +72,7 @@ button {
 
 .brand-block span {
   color: #a8b3c7;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .brand-block strong {
@@ -124,7 +124,7 @@ button {
 .eyebrow {
   color: #667085;
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   margin-bottom: 4px;
   text-transform: uppercase;
@@ -135,7 +135,7 @@ button {
   align-items: center;
   border-radius: 999px;
   display: inline-flex;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   justify-content: center;
   min-height: 28px;
@@ -228,6 +228,14 @@ label span,
   font-size: 13px;
 }
 
+.genesys-admin .summary-band span,
+.genesys-admin label span,
+.genesys-admin .muted,
+.genesys-admin .region-row span,
+.genesys-admin .status-row small {
+  font-size: 14px;
+}
+
 .summary-band strong {
   font-size: 15px;
   overflow-wrap: anywhere;
@@ -243,7 +251,7 @@ label span,
 
 .section-title {
   border-bottom: 1px solid #eaecf0;
-  font-size: 16px;
+  font-size: 18px;
   margin: 0 0 16px;
   padding-bottom: 12px;
 }

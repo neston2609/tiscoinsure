@@ -14,6 +14,8 @@ import {
   normalizeThaiPhone,
   payloadHash,
 } from "./campaign-contact";
+import { publishPolicyRenewal } from "./policy-renewal-events";
+import { nextRenewalPeriod } from "./renewal-date";
 import { backupsDir, dataDir } from "./json-repository";
 import {
   seedCampaignLists,
@@ -335,6 +337,79 @@ export async function updatePolicy(
   });
   await audit("UPDATE_POLICY", actor, id, { fields: Object.keys(data) });
   return item;
+}
+
+const renewPolicyInput = z
+  .object({
+    policyNumber: z.string().trim().min(1).max(80),
+  })
+  .strict();
+
+export async function renewPolicyByNumber(input: unknown, actor: string) {
+  const { policyNumber } = renewPolicyInput.parse(input);
+  const [allCustomers, allProducts] = await Promise.all([
+    customers.all(),
+    products.all(),
+  ]);
+  const result = await policies.mutate((rows) => {
+    const index = rows.findIndex((row) => row.policyNumber === policyNumber);
+    if (index < 0) throw httpError(404, "Policy not found");
+    const current = rows[index];
+    if (current.renewalStatus === "CANCELLED") {
+      throw httpError(409, "Cancelled policies cannot be renewed");
+    }
+    const renewedRecently =
+      current.lastRenewedAt &&
+      Date.now() - Date.parse(current.lastRenewedAt) < 24 * 60 * 60 * 1000;
+    if (renewedRecently) {
+      return {
+        policyId: current.policyId,
+        policyNumber: current.policyNumber,
+        effectiveDate: current.effectiveDate,
+        expiryDate: current.expiryDate,
+        renewalStatus: current.renewalStatus,
+        updatedAt: current.updatedAt,
+        alreadyRenewed: true,
+      };
+    }
+
+    const previousExpiryDate = current.expiryDate;
+    const period = nextRenewalPeriod(previousExpiryDate);
+    const timestamp = new Date().toISOString();
+    const renewed: Policy = {
+      ...current,
+      ...period,
+      renewalStatus: "RENEWED",
+      lastRenewedAt: timestamp,
+      updatedAt: timestamp,
+    };
+    markOutdated(renewed, allCustomers, allProducts);
+    rows[index] = renewed;
+    return {
+      policyId: renewed.policyId,
+      policyNumber: renewed.policyNumber,
+      previousExpiryDate,
+      effectiveDate: renewed.effectiveDate,
+      expiryDate: renewed.expiryDate,
+      renewalStatus: renewed.renewalStatus,
+      updatedAt: renewed.updatedAt,
+      alreadyRenewed: false,
+    };
+  });
+  if (!result.alreadyRenewed) {
+    await audit("RENEW_POLICY", actor, result.policyId, {
+      policyNumber: result.policyNumber,
+      previousExpiryDate: result.previousExpiryDate,
+      expiryDate: result.expiryDate,
+    });
+    publishPolicyRenewal({
+      policyId: result.policyId,
+      policyNumber: result.policyNumber,
+      expiryDate: result.expiryDate,
+      renewalStatus: "RENEWED",
+    });
+  }
+  return result;
 }
 
 export async function deletePolicy(id: string, actor: string): Promise<void> {

@@ -200,6 +200,7 @@ test(
       );
       const createdPolicy = (await policyResponse.json()) as {
         policyId: string;
+        policyNumber: string;
       };
       const updatedPolicy = await request(
         `/api/admin/policies/${createdPolicy.policyId}`,
@@ -213,6 +214,109 @@ test(
           .renewalStatus,
         "CONTACTED",
       );
+      assert.equal(
+        (
+          await request("/api/public/policies/renew", "POST", {
+            policyNumber: "UNKNOWN",
+          })
+        ).status,
+        404,
+      );
+      assert.equal(
+        (
+          await request("/api/public/policies/renew", "POST", {
+            policyNumber: "",
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await request(
+            `/api/admin/policies/${createdPolicy.policyId}/renew`,
+            "POST",
+          )
+        ).status,
+        401,
+      );
+      const eventController = new AbortController();
+      const eventResponse = await fetch(
+        `${origin}/api/admin/policies/renewal-events`,
+        { headers: { Cookie: cookie }, signal: eventController.signal },
+      );
+      assert.equal(eventResponse.status, 200);
+      const eventReader = eventResponse.body!.getReader();
+      assert.match(
+        new TextDecoder().decode((await eventReader.read()).value),
+        /connected/,
+      );
+      try {
+        const renewalResponse = await request(
+          "/api/public/policies/renew",
+          "POST",
+          { policyNumber: createdPolicy.policyNumber },
+        );
+        assert.equal(renewalResponse.status, 200);
+        const renewed = (await renewalResponse.json()) as {
+          policyNumber: string;
+          previousExpiryDate: string;
+          effectiveDate: string;
+          expiryDate: string;
+          renewalStatus: string;
+          alreadyRenewed: boolean;
+        };
+        assert.deepEqual(
+          {
+            previousExpiryDate: renewed.previousExpiryDate,
+            effectiveDate: renewed.effectiveDate,
+            expiryDate: renewed.expiryDate,
+            renewalStatus: renewed.renewalStatus,
+            alreadyRenewed: renewed.alreadyRenewed,
+          },
+          {
+            previousExpiryDate: "2027-09-30",
+            effectiveDate: "2027-10-01",
+            expiryDate: "2028-09-30",
+            renewalStatus: "RENEWED",
+            alreadyRenewed: false,
+          },
+        );
+        const eventText = new TextDecoder().decode(
+          (await eventReader.read()).value,
+        );
+        assert.match(eventText, /event: policy-renewed/);
+        assert.match(eventText, new RegExp(createdPolicy.policyNumber));
+        const duplicate = await request("/api/public/policies/renew", "POST", {
+          policyNumber: createdPolicy.policyNumber,
+        });
+        assert.equal(duplicate.status, 200);
+        const duplicateBody = (await duplicate.json()) as {
+          expiryDate: string;
+          alreadyRenewed: boolean;
+        };
+        assert.equal(duplicateBody.expiryDate, "2028-09-30");
+        assert.equal(duplicateBody.alreadyRenewed, true);
+        const adminRenewal = await request(
+          `/api/admin/policies/${createdPolicy.policyId}/renew`,
+          "POST",
+          {},
+          cookie,
+        );
+        assert.equal(adminRenewal.status, 200);
+        assert.equal(
+          ((await adminRenewal.json()) as { alreadyRenewed: boolean })
+            .alreadyRenewed,
+          true,
+        );
+        const refreshed = await get<{
+          renewalStatus: string;
+          expiryDate: string;
+        }>(`/api/admin/policies/${createdPolicy.policyId}`);
+        assert.equal(refreshed.renewalStatus, "RENEWED");
+        assert.equal(refreshed.expiryDate, "2028-09-30");
+      } finally {
+        eventController.abort();
+      }
       assert.equal(
         (
           await request(

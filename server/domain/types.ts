@@ -94,6 +94,7 @@ export interface Policy {
   purchaseDate: string;
   effectiveDate: string;
   expiryDate: string;
+  lastRenewedAt?: string;
   premium: number;
   sumInsured: number;
   insurerName: string;

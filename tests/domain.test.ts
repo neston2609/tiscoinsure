@@ -15,6 +15,26 @@ import {
   seedProducts,
 } from "../server/domain/seed";
 import { compareSchema } from "../server/services/genesys/genesys-sync.service";
+import { nextRenewalPeriod } from "../server/domain/renewal-date";
+import { THAI_PROVINCES } from "../src/lib/thai-provinces";
+
+test("renewal adds a calendar year and clamps leap day", () => {
+  assert.deepEqual(nextRenewalPeriod("2027-09-30"), {
+    effectiveDate: "2027-10-01",
+    expiryDate: "2028-09-30",
+  });
+  assert.deepEqual(nextRenewalPeriod("2024-02-29"), {
+    effectiveDate: "2024-03-01",
+    expiryDate: "2025-02-28",
+  });
+});
+
+test("customer province choices cover all 77 provinces", () => {
+  assert.equal(THAI_PROVINCES.length, 77);
+  assert.equal(new Set(THAI_PROVINCES).size, 77);
+  assert.ok(THAI_PROVINCES.includes("กรุงเทพมหานคร"));
+  assert.ok(THAI_PROVINCES.includes("บึงกาฬ"));
+});
 
 test("normalizes Thai mobile numbers and rejects other formats", () => {
   assert.equal(normalizeThaiPhone("081-234-5678"), "+66812345678");

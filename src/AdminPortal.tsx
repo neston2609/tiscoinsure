@@ -29,12 +29,14 @@ import {
 } from "lucide-react";
 import {
   useEffect,
+  useRef,
   useState,
   type ComponentType,
   type FormEvent,
   type ReactNode,
 } from "react";
 import { api } from "./lib/api";
+import { THAI_PROVINCES } from "./lib/thai-provinces";
 import type {
   CampaignFilters,
   CampaignList,
@@ -52,6 +54,14 @@ type PolicyRow = Policy & {
   product?: Product;
 };
 type SyncResult = { policyId: string; status: string; message: string };
+type RenewalResult = {
+  policyId: string;
+  policyNumber: string;
+  effectiveDate: string;
+  expiryDate: string;
+  renewalStatus: string;
+  alreadyRenewed: boolean;
+};
 async function syncInBatches(
   policyIds: string[],
   campaignListId: string | undefined,
@@ -537,17 +547,33 @@ function useList<T>(url: string) {
   return { data, error, loading, refresh: () => refresh((v) => v + 1) };
 }
 
+function usePolicyRenewalEvents(onRenewal: () => void) {
+  const callback = useRef(onRenewal);
+  callback.current = onRenewal;
+  useEffect(() => {
+    const events = new EventSource(`${base}/policies/renewal-events`);
+    const onEvent = () => callback.current();
+    events.addEventListener("policy-renewed", onEvent);
+    return () => events.close();
+  }, []);
+}
+
 function Dashboard() {
   const [data, setData] = useState<{
     kpis: Record<string, number>;
     charts: Record<string, { label: string; value: number }[]>;
   } | null>(null);
   const [error, setError] = useState("");
-  useEffect(() => {
+  const load = () =>
     api<typeof data>(`${base}/dashboard`)
       .then(setData)
       .catch((reason) => setError(reason.message));
+  useEffect(() => {
+    void load();
   }, []);
+  usePolicyRenewalEvents(() => {
+    void load();
+  });
   const kpis = data?.kpis;
   return (
     <>
@@ -579,7 +605,9 @@ function Dashboard() {
               >
                 <span>{label}</span>
                 <strong>
-                  {typeof value === "number" ? numberFormat.format(value) : value}
+                  {typeof value === "number"
+                    ? numberFormat.format(value)
+                    : value}
                 </strong>
                 <ArrowRight size={16} />
               </a>
@@ -909,12 +937,24 @@ function CustomerForm({
           </label>
           <label>
             Province
-            <input
+            <select
+              required={!item.customerId}
               value={form.province}
               onChange={(event) =>
                 setForm({ ...form, province: event.target.value })
               }
-            />
+            >
+              <option value="">Select province</option>
+              {form.province &&
+                !THAI_PROVINCES.some(
+                  (province) => province === form.province,
+                ) && <option value={form.province}>{form.province}</option>}
+              {THAI_PROVINCES.map((province) => (
+                <option key={province} value={province}>
+                  {province}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Preferred channel
@@ -1621,12 +1661,41 @@ function PolicyList({ renewal }: { renewal: boolean }) {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [syncing, setSyncing] = useState(false);
+  const [renewingId, setRenewingId] = useState("");
   const [result, setResult] = useState("");
   const [progress, setProgress] = useState("");
   const [failedIds, setFailedIds] = useState<string[]>([]);
   const { data, refresh } = useList<PolicyRow>(
     `${base}/${renewal ? "renewals" : "policies"}?search=${encodeURIComponent(search)}&renewalStatus=${status}&channel=${channel}&genesysStatus=${genesysStatus}&excludeDnc=${excludeDnc}&${days ? `daysTo=${days}&` : ""}page=${page}`,
   );
+  usePolicyRenewalEvents(refresh);
+  async function renew(item: PolicyRow) {
+    if (
+      !window.confirm(
+        `Renew ${item.policyNumber} for one year from its current expiry date?`,
+      )
+    )
+      return;
+    setRenewingId(item.policyId);
+    setError("");
+    setResult("");
+    try {
+      const updated = await api<RenewalResult>(
+        `${base}/policies/${item.policyId}/renew`,
+        { method: "POST" },
+      );
+      setResult(
+        updated.alreadyRenewed
+          ? `${updated.policyNumber} was already renewed. Expiry: ${dateText(updated.expiryDate)}.`
+          : `${updated.policyNumber} renewed through ${dateText(updated.expiryDate)}.`,
+      );
+      refresh();
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setRenewingId("");
+    }
+  }
   async function remove(item: Policy) {
     if (!window.confirm(`Delete policy ${item.policyNumber}?`)) return;
     try {
@@ -1920,6 +1989,19 @@ function PolicyList({ renewal }: { renewal: boolean }) {
                 </td>
                 <td className="row-actions">
                   <button onClick={() => setEditing(item)}>Edit</button>
+                  <button
+                    disabled={
+                      Boolean(renewingId) || item.renewalStatus === "CANCELLED"
+                    }
+                    title={
+                      item.renewalStatus === "CANCELLED"
+                        ? "Cancelled policies cannot be renewed"
+                        : "Renew policy for one year"
+                    }
+                    onClick={() => renew(item)}
+                  >
+                    <RefreshCw size={14} /> Renew
+                  </button>
                   {renewal && (
                     <button
                       disabled={syncing || item.customer?.dnc}
@@ -2291,6 +2373,36 @@ function PolicyDetail({ id }: { id: string }) {
   useEffect(() => {
     void load();
   }, [id]);
+  usePolicyRenewalEvents(() => {
+    void load();
+  });
+  async function renew() {
+    if (
+      !policy ||
+      !window.confirm(
+        `Renew ${policy.policyNumber} for one year from its current expiry date?`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const updated = await api<RenewalResult>(`${base}/policies/${id}/renew`, {
+        method: "POST",
+      });
+      setMessage(
+        updated.alreadyRenewed
+          ? `Already renewed. Expiry: ${dateText(updated.expiryDate)}.`
+          : `Renewed through ${dateText(updated.expiryDate)}.`,
+      );
+      await load();
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function sync() {
     if (!policy) return;
     setBusy(true);
@@ -2345,6 +2457,18 @@ function PolicyDetail({ id }: { id: string }) {
               </button>
               <button className="admin-secondary" onClick={viewPayload}>
                 View Genesys payload
+              </button>
+              <button
+                className="admin-secondary"
+                disabled={busy || policy.renewalStatus === "CANCELLED"}
+                title={
+                  policy.renewalStatus === "CANCELLED"
+                    ? "Cancelled policies cannot be renewed"
+                    : "Renew policy for one year"
+                }
+                onClick={renew}
+              >
+                <RefreshCw size={16} /> Renew policy
               </button>
               <button className="admin-primary" disabled={busy} onClick={sync}>
                 <CloudUpload size={16} />

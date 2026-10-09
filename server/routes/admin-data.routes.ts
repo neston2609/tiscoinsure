@@ -14,6 +14,7 @@ import {
   httpError,
   listAudit,
   resetDemoData,
+  renewPolicyByNumber,
   searchAll,
   updateCustomer,
   updateInquiry,
@@ -30,6 +31,7 @@ import {
 } from "../domain/store";
 import { requireAdmin } from "../middleware/require-admin";
 import type { Customer } from "../domain/types";
+import { subscribeToPolicyRenewals } from "../domain/policy-renewal-events";
 
 export const adminDataRouter = Router();
 adminDataRouter.use(requireAdmin);
@@ -230,6 +232,21 @@ adminDataRouter.get("/policies", async (request, response) => {
 adminDataRouter.get("/renewals", async (request, response) => {
   response.json(await policyRows(request.query, true));
 });
+adminDataRouter.get("/policies/renewal-events", (_request, response) => {
+  response.setHeader("Content-Type", "text/event-stream");
+  response.setHeader("Cache-Control", "no-cache, no-transform");
+  response.setHeader("X-Accel-Buffering", "no");
+  response.flushHeaders();
+  response.write(": connected\n\n");
+  const unsubscribe = subscribeToPolicyRenewals((event) => {
+    response.write(`event: policy-renewed\ndata: ${JSON.stringify(event)}\n\n`);
+  });
+  const heartbeat = setInterval(() => response.write(": heartbeat\n\n"), 25000);
+  response.on("close", () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  });
+});
 adminDataRouter.get("/policies/:id", async (request, response) => {
   const item = await policies.findById("policyId", request.params.id);
   if (!item) throw httpError(404, "Policy not found");
@@ -244,6 +261,16 @@ adminDataRouter.post("/policies", async (request, response) => {
   response
     .status(201)
     .json(await createPolicy(request.body, request.user!.name));
+});
+adminDataRouter.post("/policies/:id/renew", async (request, response) => {
+  const policy = await policies.findById("policyId", request.params.id);
+  if (!policy) throw httpError(404, "Policy not found");
+  response.json(
+    await renewPolicyByNumber(
+      { policyNumber: policy.policyNumber },
+      request.user!.name,
+    ),
+  );
 });
 adminDataRouter.put("/policies/:id", async (request, response) => {
   response.json(

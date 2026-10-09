@@ -33,6 +33,20 @@ Create a server-only `.env` from `.env.example` before `npm start`. Set persiste
 
 The public website cannot access `/api/admin/*`. Admin APIs use a signed, HTTP-only session cookie, same-origin checks on mutations, a login rate limit, and file-backed sessions. In production the cookie requires HTTPS. Changing the admin password requires the current password and invalidates all existing admin sessions. Client Secret and OAuth tokens are never returned to the browser.
 
+### Public policy renewal API
+
+`POST /api/public/policies/renew` accepts JSON with a single `policyNumber` field and does not require authentication:
+
+```bash
+curl -X POST https://tiscodemo.bsmrpa.com/api/public/policies/renew \
+  -H 'Content-Type: application/json' \
+  -d '{"policyNumber":"YOUR_POLICY_NUMBER"}'
+```
+
+The response contains the policy number, new effective and expiry dates, `renewalStatus: "RENEWED"`, and `alreadyRenewed`. The first renewal also returns the previous expiry date. A successful renewal starts the next coverage period the day after the old expiry and extends expiry by one calendar year (Feb 29 becomes Feb 28). Repeated requests within 24 hours return the current dates without adding another year. Cancelled policies return 409; missing policies return 404. The route is limited to 60 requests per hour per IP. Admin policy and renewal screens refresh through an authenticated Server-Sent Events stream when a renewal occurs, including renewals triggered by this API. The admin Renew buttons use a session-protected endpoint and the same business logic.
+
+**Security:** This unauthenticated endpoint can change demo policy records for anyone who knows a policy number. Do not use it for real insurance data without adding an authorization mechanism or upstream access control.
+
 ## Data and backups
 
 All business records live in `data/*.json`. On first boot the app seeds 30 customers, 10 products, 40 policies, 5 inquiries, and 6 campaigns. `CUST00001` and `POL00001` are the sample customer/policy. JSON writes are serialized per file and atomic. `data/config/*.json` holds Genesys regions and encrypted configuration; `data/.auth/admin.json` holds the salted admin password hash; `data/.sessions/` stores sessions. None of these generated files should be committed.
