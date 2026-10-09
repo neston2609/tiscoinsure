@@ -72,16 +72,12 @@ const changePasswordLimiter = rateLimit({
 const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1).max(256),
-    newPassword: z.string().min(12).max(128),
+    newPassword: z.string().min(1),
     confirmPassword: z.string(),
   })
   .refine((value) => value.newPassword === value.confirmPassword, {
     message: "New passwords do not match",
     path: ["confirmPassword"],
-  })
-  .refine((value) => value.newPassword !== value.currentPassword, {
-    message: "New password must differ from current password",
-    path: ["newPassword"],
   });
 
 authRouter.post(

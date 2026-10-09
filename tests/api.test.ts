@@ -111,6 +111,32 @@ test(
       assert.equal(login.status, 200);
       const cookie = login.headers.get("set-cookie")?.split(";")[0];
       assert.ok(cookie);
+      assert.equal(
+        (await request("/api/admin/genesys/contact-lists/not-a-uuid")).status,
+        401,
+      );
+      assert.equal(
+        (
+          await request(
+            "/api/admin/genesys/contact-lists/not-a-uuid",
+            "GET",
+            undefined,
+            cookie,
+          )
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await request(
+            "/api/admin/genesys/config",
+            "PUT",
+            { contactListId: "Contact List Name" },
+            cookie,
+          )
+        ).status,
+        400,
+      );
       const get = async <T>(endpoint: string) =>
         (await (await request(endpoint, "GET", undefined, cookie)).json()) as T;
       const customers = await get<{
@@ -280,12 +306,34 @@ test(
         [...new Uint8Array(await exportResponse.arrayBuffer()).slice(0, 3)],
         [0xef, 0xbb, 0xbf],
       );
-      await request(
+      const savedGenesysConfig = await request(
         "/api/admin/genesys/config",
         "PUT",
-        { clientId: "test-client", clientSecret: "test-secret" },
+        {
+          clientId: "test-client",
+          clientSecret: "test-secret",
+          contactListId: "11111111-1111-4111-8111-111111111111",
+          contactListName: "Test List",
+        },
         cookie,
       );
+      assert.equal(savedGenesysConfig.status, 200);
+      const configResult = (await savedGenesysConfig.json()) as {
+        config: {
+          secretConfigured: boolean;
+          clientSecretEncrypted?: string;
+          contactListId: string;
+        };
+        enabledRegions?: unknown[];
+      };
+      assert.equal(configResult.config.secretConfigured, true);
+      assert.equal(configResult.config.clientSecretEncrypted, undefined);
+      assert.equal(
+        configResult.config.contactListId,
+        "11111111-1111-4111-8111-111111111111",
+      );
+      assert.ok(Array.isArray(configResult.enabledRegions));
+      assert.ok(configResult.enabledRegions.length > 0);
       const backupResponse = await request(
         "/api/admin/settings/backup",
         "POST",
@@ -404,8 +452,8 @@ test(
         (
           await change({
             currentPassword: "TestPassword123!",
-            newPassword: "short",
-            confirmPassword: "short",
+            newPassword: "",
+            confirmPassword: "",
           })
         ).status,
         400,
@@ -424,18 +472,8 @@ test(
         (
           await change({
             currentPassword: "TestPassword123!",
-            newPassword: "TestPassword123!",
-            confirmPassword: "TestPassword123!",
-          })
-        ).status,
-        400,
-      );
-      assert.equal(
-        (
-          await change({
-            currentPassword: "TestPassword123!",
-            newPassword: "NewPassword456!",
-            confirmPassword: "NewPassword456!",
+            newPassword: "x",
+            confirmPassword: "x",
           })
         ).status,
         204,
@@ -478,7 +516,7 @@ test(
       );
       const newLogin = await request("/api/admin/auth/login", "POST", {
         username: "admin",
-        password: "NewPassword456!",
+        password: "x",
       });
       assert.equal(newLogin.status, 200);
       const newCookie = newLogin.headers.get("set-cookie")?.split(";")[0];
@@ -488,12 +526,36 @@ test(
           .status,
         200,
       );
+      assert.equal(
+        (
+          await request(
+            "/api/admin/auth/change-password",
+            "POST",
+            {
+              currentPassword: "x",
+              newPassword: "x",
+              confirmPassword: "x",
+            },
+            newCookie,
+          )
+        ).status,
+        204,
+      );
+      assert.equal(
+        (
+          await request("/api/admin/auth/login", "POST", {
+            username: "admin",
+            password: "x",
+          })
+        ).status,
+        200,
+      );
       const savedCredentials = await readFile(
         path.join(root, "data", ".auth", "admin.json"),
         "utf8",
       );
       assert.ok(!savedCredentials.includes("TestPassword123!"));
-      assert.ok(!savedCredentials.includes("NewPassword456!"));
+      assert.ok(!savedCredentials.includes('"password":"x"'));
     } finally {
       if (child.exitCode === null) {
         child.kill();

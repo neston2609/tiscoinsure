@@ -7,6 +7,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Search,
   RefreshCcw,
   Save,
   ShieldCheck,
@@ -26,7 +27,43 @@ import { api } from "./lib/api";
 
 type Tab = "integration" | "regions";
 type EditorMode = "edit" | "create";
-type ContactList = { id: string; name: string; columnNames?: string[] };
+type ContactList = {
+  id: string;
+  name: string;
+  columnNames?: string[];
+  phoneColumns?: unknown[];
+};
+type Campaign = { campaignListId: string; name: string };
+type ContactPreview = {
+  rows: {
+    contact: {
+      firstName: string;
+      lastName: string;
+      phone: string;
+      policyNumber: string;
+      productName: string;
+    };
+    eligibility: string;
+  }[];
+  summary: {
+    matched: number;
+    eligible: number;
+    dncExcluded: number;
+    invalidPhone: number;
+    duplicatePhone: number;
+    alreadySynced: number;
+  };
+};
+type ContactReview = { target: ContactList; preview: ContactPreview };
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function contactListIdFromInput(value: string): string {
+  const match = value.match(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+  );
+  return match?.[0] ?? value.trim();
+}
 type SchemaResult = {
   valid: boolean;
   message: string;
@@ -79,6 +116,11 @@ export function App() {
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const [contactLists, setContactLists] = useState<ContactList[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [campaignId, setCampaignId] = useState("");
+  const [contactReview, setContactReview] = useState<ContactReview | null>(
+    null,
+  );
   const [schemaResult, setSchemaResult] = useState<SchemaResult | null>(null);
 
   async function loadAll() {
@@ -105,6 +147,9 @@ export function App() {
 
   useEffect(() => {
     void loadAll();
+    void api<{ items: Campaign[] }>("/api/admin/campaigns")
+      .then((result) => setCampaigns(result.items))
+      .catch(() => setError("Unable to load source campaigns."));
   }, []);
 
   const activeRegionPreview = useMemo(() => {
@@ -129,7 +174,11 @@ export function App() {
         method: "PUT",
         body,
       });
-      setConfigResponse(result);
+      setConfigResponse({
+        ...result,
+        enabledRegions:
+          result.enabledRegions ?? configResponse?.enabledRegions ?? [],
+      });
       setConfigDraft(result.config);
       setToast("Genesys configuration saved.");
     });
@@ -270,6 +319,33 @@ export function App() {
       const count = result.total ?? result.entities?.length ?? 0;
       setToast(
         `${count} contact list${count === 1 ? "" : "s"} loaded from Genesys.`,
+      );
+    });
+  }
+
+  async function reviewContacts() {
+    await run("review-contacts", async () => {
+      const id = contactListIdFromInput(configDraft.contactListId ?? "");
+      if (!UUID_PATTERN.test(id)) {
+        throw new Error(
+          "Enter a Genesys Contact List UUID or select a list first.",
+        );
+      }
+      const previewPath = campaignId
+        ? `/api/admin/campaigns/${encodeURIComponent(campaignId)}/preview`
+        : "/api/admin/campaigns/preview";
+      const [target, preview] = await Promise.all([
+        api<ContactList>(`/api/admin/genesys/contact-lists/${id}`),
+        api<ContactPreview>(previewPath, {
+          method: "POST",
+          body: JSON.stringify({ filters: {} }),
+        }),
+      ]);
+      setContactReview({ target, preview });
+      setConfigDraft((draft) =>
+        contactListIdFromInput(draft.contactListId ?? "") === id
+          ? { ...draft, contactListId: id, contactListName: target.name }
+          : draft,
       );
     });
   }
@@ -506,6 +582,7 @@ export function App() {
                         contactListName: item?.name || "",
                       });
                       setSchemaResult(null);
+                      setContactReview(null);
                     }}
                   >
                     <option value="">Select contact list</option>
@@ -530,13 +607,24 @@ export function App() {
                   <span>Contact List ID</span>
                   <input
                     value={configDraft.contactListId ?? ""}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const id = contactListIdFromInput(event.target.value);
                       setConfigDraft({
                         ...configDraft,
-                        contactListId: event.target.value,
-                      })
-                    }
+                        contactListId: id,
+                        contactListName:
+                          id === configDraft.contactListId
+                            ? configDraft.contactListName
+                            : "",
+                      });
+                      setSchemaResult(null);
+                      setContactReview(null);
+                    }}
                   />
+                  <small className="muted">
+                    Use the UUID from the Genesys Contact List URL, not its
+                    name. Selecting a list above fills this field automatically.
+                  </small>
                 </label>
                 <label>
                   <span>Phone Column</span>
@@ -551,6 +639,117 @@ export function App() {
                   />
                 </label>
               </div>
+            </section>
+
+            <section className="settings-panel">
+              <SectionTitle title="Review Contact List" />
+              <div className="field-grid">
+                <label>
+                  <span>Source campaign</span>
+                  <select
+                    value={campaignId}
+                    onChange={(event) => {
+                      setCampaignId(event.target.value);
+                      setContactReview(null);
+                    }}
+                  >
+                    <option value="">All policies</option>
+                    {campaigns.map((campaign) => (
+                      <option
+                        key={campaign.campaignListId}
+                        value={campaign.campaignListId}
+                      >
+                        {campaign.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="button-row">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={reviewContacts}
+                  disabled={Boolean(busy)}
+                >
+                  <Search size={16} />
+                  Review target and contacts
+                </button>
+              </div>
+              {contactReview && (
+                <div className="contact-review">
+                  <div className="review-target">
+                    <strong>Genesys destination</strong>
+                    <span>{contactReview.target.name}</span>
+                    <code>{contactReview.target.id}</code>
+                    <small>
+                      Columns:{" "}
+                      {contactReview.target.columnNames?.join(", ") ||
+                        "None reported"}
+                    </small>
+                  </div>
+                  <div className="review-counts">
+                    <SummaryItem
+                      label="Matched"
+                      value={String(contactReview.preview.summary.matched)}
+                    />
+                    <SummaryItem
+                      label="Ready"
+                      value={String(contactReview.preview.summary.eligible)}
+                    />
+                    <SummaryItem
+                      label="DNC"
+                      value={String(contactReview.preview.summary.dncExcluded)}
+                    />
+                    <SummaryItem
+                      label="Invalid phone"
+                      value={String(contactReview.preview.summary.invalidPhone)}
+                    />
+                    <SummaryItem
+                      label="Duplicate"
+                      value={String(
+                        contactReview.preview.summary.duplicatePhone,
+                      )}
+                    />
+                    <SummaryItem
+                      label="Already synced"
+                      value={String(
+                        contactReview.preview.summary.alreadySynced,
+                      )}
+                    />
+                  </div>
+                  <p className="muted">
+                    Only Ready contacts are eligible for sync. Review does not
+                    send data to Genesys.
+                  </p>
+                  <div className="review-table-wrap">
+                    <table className="review-table">
+                      <thead>
+                        <tr>
+                          <th>Customer</th>
+                          <th>Phone</th>
+                          <th>Policy</th>
+                          <th>Product</th>
+                          <th>Eligibility</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {contactReview.preview.rows.map((row, index) => (
+                          <tr key={`${row.contact.policyNumber}-${index}`}>
+                            <td>
+                              {row.contact.firstName} {row.contact.lastName}
+                            </td>
+                            <td>{row.contact.phone}</td>
+                            <td>{row.contact.policyNumber}</td>
+                            <td>{row.contact.productName}</td>
+                            <td>{row.eligibility.replaceAll("_", " ")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </section>
 
             <section className="settings-panel">

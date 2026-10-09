@@ -136,6 +136,7 @@ genesysAdminRouter.put("/config", async (request, response, next) => {
     const body = request.body as Partial<GenesysConfig> & {
       clientSecret?: string;
     };
+    if (body.contactListId) z.string().uuid().parse(body.contactListId);
     if (body.regionId) {
       const region = await genesysRegionService.getRegion(body.regionId);
       if (!region.enabled) {
@@ -159,6 +160,9 @@ genesysAdminRouter.put("/config", async (request, response, next) => {
     response.json({
       config: serializeConfig(config),
       activeRegion: await genesysRegionService.getActiveRegion(),
+      enabledRegions: (await genesysRegionService.listRegions()).filter(
+        (region) => region.enabled,
+      ),
     });
   } catch (error) {
     next(error);
@@ -216,6 +220,29 @@ genesysAdminRouter.post(
         "/api/v2/outbound/contactlists?pageSize=100",
       );
       response.json(data);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+genesysAdminRouter.get(
+  "/contact-lists/:contactListId",
+  async (request, response, next) => {
+    try {
+      const id = z.string().uuid().parse(request.params.contactListId);
+      const list = await genesysApiClient.get<{
+        id: string;
+        name: string;
+        columnNames?: string[];
+        phoneColumns?: unknown[];
+      }>(`/api/v2/outbound/contactlists/${id}`);
+      response.json({
+        id: list.id,
+        name: list.name,
+        columnNames: list.columnNames ?? [],
+        phoneColumns: list.phoneColumns ?? [],
+      });
     } catch (error) {
       next(error);
     }

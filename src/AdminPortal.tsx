@@ -73,11 +73,11 @@ async function syncInBatches(
   return results;
 }
 const base = "/api/admin";
-const TH = new Intl.NumberFormat("th-TH");
-const money = (value: number) => `฿${TH.format(value)}`;
+const numberFormat = new Intl.NumberFormat("en-US");
+const money = (value: number) => `฿${numberFormat.format(value)}`;
 const dateText = (value?: string | null) =>
   value
-    ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString("th-TH", {
+    ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString("en-US", {
         day: "numeric",
         month: "short",
         year: "numeric",
@@ -95,50 +95,50 @@ const statuses = [
   "EXPIRED",
   "CANCELLED",
 ];
-const statusTH: Record<string, string> = {
-  NOT_STARTED: "ยังไม่เริ่ม",
-  CONTACT_PENDING: "รอติดต่อ",
-  CONTACTED: "ติดต่อแล้ว",
-  INTERESTED: "สนใจ",
-  CALLBACK_REQUESTED: "ขอโทรกลับ",
-  NOT_INTERESTED: "ไม่สนใจ",
-  RENEWED: "ต่ออายุแล้ว",
-  EXPIRED: "หมดอายุ",
-  CANCELLED: "ยกเลิก",
-  NOT_SYNCED: "ยังไม่ซิงก์",
-  SYNCED: "ซิงก์แล้ว",
-  OUTDATED: "ข้อมูลเปลี่ยน",
-  FAILED: "ผิดพลาด",
+const statusLabels: Record<string, string> = {
+  NOT_STARTED: "Not started",
+  CONTACT_PENDING: "Contact pending",
+  CONTACTED: "Contacted",
+  INTERESTED: "Interested",
+  CALLBACK_REQUESTED: "Callback requested",
+  NOT_INTERESTED: "Not interested",
+  RENEWED: "Renewed",
+  EXPIRED: "Expired",
+  CANCELLED: "Cancelled",
+  NOT_SYNCED: "Not synced",
+  SYNCED: "Synced",
+  OUTDATED: "Outdated",
+  FAILED: "Failed",
   SKIPPED_DNC: "DNC",
-  INVALID_PHONE: "เบอร์ไม่ถูกต้อง",
-  SCHEMA_MISMATCH: "คอลัมน์ไม่ตรง",
-  NEW: "ใหม่",
-  CLOSED: "ปิดแล้ว",
-  CONVERTED: "สำเร็จ",
+  INVALID_PHONE: "Invalid phone",
+  SCHEMA_MISMATCH: "Schema mismatch",
+  NEW: "New",
+  CLOSED: "Closed",
+  CONVERTED: "Completed",
 };
 const titleFor: Record<string, string> = {
-  dashboard: "ภาพรวมธุรกิจ",
-  customers: "ลูกค้า",
-  products: "สินค้า",
-  policies: "กรมธรรม์",
-  renewals: "ติดตามต่ออายุ",
-  campaigns: "แคมเปญ",
-  inquiries: "คำขอติดต่อกลับ",
+  dashboard: "Business overview",
+  customers: "Customers",
+  products: "Products",
+  policies: "Policies",
+  renewals: "Renewals",
+  campaigns: "Campaigns",
+  inquiries: "Callback requests",
   genesys: "Genesys Cloud",
-  audit: "บันทึกกิจกรรม",
-  settings: "ตั้งค่าระบบ",
+  audit: "Audit log",
+  settings: "System settings",
 };
 const nav = [
-  { key: "dashboard", label: "ภาพรวม", icon: LayoutDashboard },
-  { key: "customers", label: "ลูกค้า", icon: Users },
-  { key: "products", label: "สินค้า", icon: ShieldCheck },
-  { key: "policies", label: "กรมธรรม์", icon: FileText },
-  { key: "renewals", label: "ต่ออายุ", icon: RefreshCw },
-  { key: "campaigns", label: "แคมเปญ", icon: Filter },
-  { key: "inquiries", label: "คำขอติดต่อกลับ", icon: ClipboardList },
+  { key: "dashboard", label: "Overview", icon: LayoutDashboard },
+  { key: "customers", label: "Customers", icon: Users },
+  { key: "products", label: "Products", icon: ShieldCheck },
+  { key: "policies", label: "Policies", icon: FileText },
+  { key: "renewals", label: "Renewals", icon: RefreshCw },
+  { key: "campaigns", label: "Campaigns", icon: Filter },
+  { key: "inquiries", label: "Callback requests", icon: ClipboardList },
   { key: "genesys", label: "Genesys Cloud", icon: CloudUpload },
-  { key: "audit", label: "บันทึกกิจกรรม", icon: Activity },
-  { key: "settings", label: "ตั้งค่า", icon: Settings },
+  { key: "audit", label: "Audit log", icon: Activity },
+  { key: "settings", label: "Settings", icon: Settings },
 ];
 
 export function Root() {
@@ -154,7 +154,7 @@ export function Root() {
         .catch(() => setSession({ authenticated: false, username: "" }));
   }, [path]);
   if (!path.startsWith("/backend")) return <PublicEntry />;
-  if (!session) return <div className="admin-loading">กำลังโหลด...</div>;
+  if (!session) return <div className="admin-loading">Loading...</div>;
   if (!session.authenticated) return <Login onLogin={setSession} />;
   if (path === "/backend/login")
     window.history.replaceState({}, "", "/backend");
@@ -195,9 +195,7 @@ function Login({
       window.history.replaceState({}, "", "/backend");
       onLogin(result);
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "เข้าสู่ระบบไม่สำเร็จ",
-      );
+      setError(reason instanceof Error ? reason.message : "Sign in failed");
     } finally {
       setBusy(false);
     }
@@ -212,15 +210,15 @@ function Login({
         <small>Management Portal</small>
       </div>
       <form onSubmit={submit}>
-        <h1>เข้าสู่ระบบ</h1>
-        <p>จัดการข้อมูลประกันภัยและการต่ออายุ</p>
+        <h1>Sign in</h1>
+        <p>Manage insurance records and renewals</p>
         {passwordChanged && (
           <div className="admin-success" role="status">
-            เปลี่ยนรหัสผ่านแล้ว กรุณาเข้าสู่ระบบด้วยรหัสใหม่
+            Password updated. Sign in with your new password.
           </div>
         )}
         <label>
-          ชื่อผู้ใช้
+          Username
           <input
             autoComplete="username"
             required
@@ -229,7 +227,7 @@ function Login({
           />
         </label>
         <label>
-          รหัสผ่าน
+          Password
           <input
             autoComplete="current-password"
             required
@@ -244,11 +242,11 @@ function Login({
           </div>
         )}
         <button className="admin-primary" disabled={busy}>
-          {busy ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
+          {busy ? "Signing in..." : "Sign in"}
           <ArrowRight size={18} />
         </button>
       </form>
-      <a href="/">← กลับเว็บไซต์</a>
+      <a href="/">← Back to website</a>
     </div>
   );
 }
@@ -281,9 +279,9 @@ function AdminPortal({ username }: { username: string }) {
     return (
       <div className="genesys-admin">
         <div className="genesys-exit">
-          <a href="/backend">← กลับแดชบอร์ด</a>
+          <a href="/backend">← Back to dashboard</a>
           <button onClick={logout}>
-            <LogOut size={15} /> ออกจากระบบ
+            <LogOut size={15} /> Sign out
           </button>
         </div>
         <GenesysSettings />
@@ -317,10 +315,10 @@ function AdminPortal({ username }: { username: string }) {
         </nav>
         <div className="sidebar-bottom">
           <a href="/" target="_blank" rel="noreferrer">
-            <Globe2 size={17} /> เปิดหน้าเว็บไซต์
+            <Globe2 size={17} /> Open website
           </a>
           <button onClick={logout}>
-            <LogOut size={17} /> ออกจากระบบ
+            <LogOut size={17} /> Sign out
           </button>
         </div>
       </aside>
@@ -328,26 +326,26 @@ function AdminPortal({ username }: { username: string }) {
         <header className="admin-topbar">
           <button
             className="admin-menu-button"
-            aria-label="เมนู"
+            aria-label="Menu"
             onClick={() => setMenuOpen(!menuOpen)}
           >
             <Menu size={20} />
           </button>
           <div className="admin-breadcrumb">
             MFEC Insurrance <ChevronRight size={14} />{" "}
-            <b>{titleFor[key] || "จัดการ"}</b>
+            <b>{titleFor[key] || "Management"}</b>
           </div>
           <div className="admin-global-search">
             <Search size={17} />
             <input
-              aria-label="ค้นหาในระบบ"
-              placeholder="ค้นหาลูกค้า กรมธรรม์ ทะเบียนรถ"
+              aria-label="Search"
+              placeholder="Search customers, policies, registration plates"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
             {searchResult && (
               <div className="search-popover">
-                <b>ลูกค้า</b>
+                <b>Customers</b>
                 {searchResult.customers.map((item) => (
                   <a
                     key={item.customerId}
@@ -357,7 +355,7 @@ function AdminPortal({ username }: { username: string }) {
                     <small>{item.customerId}</small>
                   </a>
                 ))}
-                <b>กรมธรรม์</b>
+                <b>Policies</b>
                 {searchResult.policies.map((item) => (
                   <a
                     key={item.policyId}
@@ -368,7 +366,9 @@ function AdminPortal({ username }: { username: string }) {
                   </a>
                 ))}
                 {!searchResult.customers.length &&
-                  !searchResult.policies.length && <span>ไม่พบข้อมูล</span>}
+                  !searchResult.policies.length && (
+                    <span>No records found</span>
+                  )}
               </div>
             )}
           </div>
@@ -397,7 +397,7 @@ function AdminPortal({ username }: { username: string }) {
           ) : key === "settings" ? (
             <SystemSettings />
           ) : (
-            <div className="empty-state">ไม่พบหน้านี้</div>
+            <div className="empty-state">Page not found</div>
           )}
         </main>
       </div>
@@ -432,11 +432,11 @@ function Badge({ value }: { value: string }) {
     <span
       className={`admin-badge ${value.toLowerCase().replace(/[^a-z]/g, "-")}`}
     >
-      {statusTH[value] || value}
+      {statusLabels[value] || value}
     </span>
   );
 }
-function Empty({ text = "ไม่พบข้อมูล" }: { text?: string }) {
+function Empty({ text = "No records found" }: { text?: string }) {
   return <div className="admin-empty">{text}</div>;
 }
 function ErrorNotice({ error }: { error: string }) {
@@ -464,13 +464,13 @@ function Pager({
         {total
           ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)}`
           : "0"}{" "}
-        จาก {total} รายการ
+        of {total} records
       </span>
       <div>
         <button
           disabled={page <= 1}
           onClick={() => onChange(page - 1)}
-          aria-label="หน้าก่อน"
+          aria-label="Previous page"
         >
           <ChevronLeft size={17} />
         </button>
@@ -480,7 +480,7 @@ function Pager({
         <button
           disabled={page >= pages}
           onClick={() => onChange(page + 1)}
-          aria-label="หน้าถัดไป"
+          aria-label="Next page"
         >
           <ChevronRight size={17} />
         </button>
@@ -508,7 +508,7 @@ function Modal({
       >
         <div className="admin-modal-head">
           <h2>{title}</h2>
-          <button aria-label="ปิด" onClick={onClose}>
+          <button aria-label="Close" onClick={onClose}>
             <X size={20} />
           </button>
         </div>
@@ -552,25 +552,25 @@ function Dashboard() {
   return (
     <>
       <PageHead
-        eyebrow="แดชบอร์ด"
-        title="ภาพรวมธุรกิจ"
-        description="ข้อมูลลูกค้า กรมธรรม์ และงานต่ออายุในระบบ"
+        eyebrow="Dashboard"
+        title="Business overview"
+        description="Customers, policies, and renewal activity"
       />
       <ErrorNotice error={error} />
       {!data ? (
-        <div className="admin-loading">กำลังโหลด...</div>
+        <div className="admin-loading">Loading...</div>
       ) : (
         <>
           <div className="kpi-grid">
             {[
-              ["ลูกค้าทั้งหมด", kpis?.totalCustomers, "customers"],
-              ["กรมธรรม์ที่ใช้งาน", kpis?.activePolicies, "policies"],
-              ["เบี้ยประกันรวม", money(kpis?.totalPremium || 0), "policies"],
-              ["หมดอายุใน 30 วัน", kpis?.expiring30, "renewals"],
-              ["รอติดต่อ", kpis?.contactPending, "renewals"],
-              ["ขอโทรกลับ", kpis?.callbackRequested, "renewals"],
-              ["ต่ออายุแล้ว", kpis?.renewed, "renewals"],
-              ["คำขอใหม่", kpis?.newInquiries, "inquiries"],
+              ["Total customers", kpis?.totalCustomers, "customers"],
+              ["Active policies", kpis?.activePolicies, "policies"],
+              ["Total premium", money(kpis?.totalPremium || 0), "policies"],
+              ["Expiring in 30 days", kpis?.expiring30, "renewals"],
+              ["Contact pending", kpis?.contactPending, "renewals"],
+              ["Callback requested", kpis?.callbackRequested, "renewals"],
+              ["Renewed", kpis?.renewed, "renewals"],
+              ["New inquiries", kpis?.newInquiries, "inquiries"],
             ].map(([label, value, link]) => (
               <a
                 className="kpi-tile"
@@ -579,7 +579,7 @@ function Dashboard() {
               >
                 <span>{label}</span>
                 <strong>
-                  {typeof value === "number" ? TH.format(value) : value}
+                  {typeof value === "number" ? numberFormat.format(value) : value}
                 </strong>
                 <ArrowRight size={16} />
               </a>
@@ -588,17 +588,17 @@ function Dashboard() {
           <div className="dashboard-row">
             <div className="admin-panel">
               <div className="panel-head">
-                <h2>กรมธรรม์ใกล้หมดอายุ</h2>
+                <h2>Policies nearing expiry</h2>
                 <a href="/backend/renewals">
-                  ดูรายการ <ArrowRight size={15} />
+                  View records <ArrowRight size={15} />
                 </a>
               </div>
               <div className="expiry-bars">
                 {[
-                  ["7 วัน", kpis?.expiring7],
-                  ["30 วัน", kpis?.expiring30],
-                  ["60 วัน", kpis?.expiring60],
-                  ["90 วัน", kpis?.expiring90],
+                  ["7 days", kpis?.expiring7],
+                  ["30 days", kpis?.expiring30],
+                  ["60 days", kpis?.expiring60],
+                  ["90 days", kpis?.expiring90],
                 ].map(([label, value]) => (
                   <div key={String(label)}>
                     <span>{label}</span>
@@ -616,7 +616,7 @@ function Dashboard() {
             </div>
             <div className="admin-panel">
               <div className="panel-head">
-                <h2>สถานะการต่ออายุ</h2>
+                <h2>Renewal status</h2>
               </div>
               <div className="dashboard-status-list">
                 {data.charts.byRenewal.map((item) => (
@@ -631,7 +631,7 @@ function Dashboard() {
           <div className="dashboard-row">
             <div className="admin-panel">
               <div className="panel-head">
-                <h2>กรมธรรม์ตามสินค้า</h2>
+                <h2>Policies by product</h2>
               </div>
               <div className="mini-bars">
                 {data.charts.byProduct.map((item) => (
@@ -653,7 +653,7 @@ function Dashboard() {
               <div className="panel-head">
                 <h2>Genesys Sync</h2>
                 <a href="/backend/genesys">
-                  ตั้งค่าการเชื่อมต่อ <ArrowRight size={15} />
+                  Configure integration <ArrowRight size={15} />
                 </a>
               </div>
               <div className="dashboard-status-list">
@@ -699,7 +699,8 @@ function CustomerList() {
   const url = `${base}/customers?search=${encodeURIComponent(search)}&channel=${channel}&dnc=${dnc}&page=${page}`;
   const { data, loading, refresh } = useList<Customer>(url);
   async function remove(item: Customer) {
-    if (!window.confirm(`ลบลูกค้า ${item.firstName} ${item.lastName}?`)) return;
+    if (!window.confirm(`Delete customer ${item.firstName} ${item.lastName}?`))
+      return;
     try {
       await api(`${base}/customers/${item.customerId}`, { method: "DELETE" });
       refresh();
@@ -710,15 +711,15 @@ function CustomerList() {
   return (
     <>
       <PageHead
-        eyebrow="ข้อมูลหลัก"
-        title="ลูกค้า"
-        description="ค้นหาและจัดการข้อมูลผู้เอาประกัน"
+        eyebrow="Records"
+        title="Customers"
+        description="Search and manage policyholders"
         action={
           <button
             className="admin-primary"
             onClick={() => setEditing(blankCustomer())}
           >
-            <Plus size={17} /> เพิ่มลูกค้า
+            <Plus size={17} /> Add customer
           </button>
         }
       />
@@ -727,7 +728,7 @@ function CustomerList() {
         <div className="admin-search">
           <Search size={17} />
           <input
-            placeholder="ชื่อ เบอร์โทร หรือรหัสลูกค้า"
+            placeholder="Name, phone, or customer ID"
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
@@ -742,7 +743,7 @@ function CustomerList() {
             setPage(1);
           }}
         >
-          <option value="">ทุกช่องทาง</option>
+          <option value="">All channels</option>
           {channels.map((item) => (
             <option key={item}>{item}</option>
           ))}
@@ -754,20 +755,20 @@ function CustomerList() {
             setPage(1);
           }}
         >
-          <option value="">ทั้งหมด</option>
+          <option value="">All</option>
           <option value="true">DNC</option>
-          <option value="false">ติดต่อได้</option>
+          <option value="false">Contactable</option>
         </select>
       </div>
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
             <tr>
-              <th>รหัส</th>
-              <th>ชื่อ-นามสกุล</th>
-              <th>เบอร์โทร</th>
-              <th>จังหวัด</th>
-              <th>ช่องทาง</th>
+              <th>ID</th>
+              <th>Full name</th>
+              <th>Phone</th>
+              <th>Province</th>
+              <th>Channel</th>
               <th>DNC</th>
               <th></th>
             </tr>
@@ -793,15 +794,15 @@ function CustomerList() {
                 <td>{item.preferredChannel}</td>
                 <td>{item.dnc ? <Badge value="SKIPPED_DNC" /> : "—"}</td>
                 <td className="row-actions">
-                  <button aria-label="แก้ไข" onClick={() => setEditing(item)}>
-                    แก้ไข
+                  <button aria-label="Edit" onClick={() => setEditing(item)}>
+                    Edit
                   </button>
                   <button
                     className="danger-link"
-                    aria-label="ลบ"
+                    aria-label="Delete"
                     onClick={() => remove(item)}
                   >
-                    ลบ
+                    Delete
                   </button>
                 </td>
               </tr>
@@ -860,13 +861,13 @@ function CustomerForm({
   }
   return (
     <Modal
-      title={item.customerId ? `แก้ไข ${item.customerId}` : "เพิ่มลูกค้า"}
+      title={item.customerId ? `Edit ${item.customerId}` : "Add customer"}
       onClose={onClose}
     >
       <form className="admin-form" onSubmit={save}>
         <div className="admin-form-grid">
           <label>
-            ชื่อ
+            First name
             <input
               required
               value={form.firstName}
@@ -876,7 +877,7 @@ function CustomerForm({
             />
           </label>
           <label>
-            นามสกุล
+            Last name
             <input
               required
               value={form.lastName}
@@ -886,7 +887,7 @@ function CustomerForm({
             />
           </label>
           <label>
-            โทรศัพท์
+            Phone
             <input
               required
               type="tel"
@@ -897,7 +898,7 @@ function CustomerForm({
             />
           </label>
           <label>
-            อีเมล
+            Email
             <input
               type="email"
               value={form.email}
@@ -907,7 +908,7 @@ function CustomerForm({
             />
           </label>
           <label>
-            จังหวัด
+            Province
             <input
               value={form.province}
               onChange={(event) =>
@@ -916,7 +917,7 @@ function CustomerForm({
             />
           </label>
           <label>
-            ช่องทางที่สะดวก
+            Preferred channel
             <select
               value={form.preferredChannel}
               onChange={(event) =>
@@ -941,15 +942,15 @@ function CustomerForm({
               setForm({ ...form, dnc: event.target.checked })
             }
           />{" "}
-          ไม่ประสงค์รับการติดต่อ (DNC)
+          Do not contact (DNC)
         </label>
         <ErrorNotice error={error} />
         <div className="form-actions">
           <button type="button" onClick={onClose}>
-            ยกเลิก
+            Cancel
           </button>
           <button className="admin-primary" disabled={busy}>
-            <Save size={16} /> บันทึก
+            <Save size={16} /> Save
           </button>
         </div>
       </form>
@@ -974,7 +975,7 @@ function Customer360({ id }: { id: string }) {
   return (
     <>
       <a className="admin-back" href="/backend/customers">
-        <ArrowLeft size={16} /> กลับรายการลูกค้า
+        <ArrowLeft size={16} /> Back to customers
       </a>
       <PageHead
         eyebrow="Customer 360"
@@ -988,7 +989,7 @@ function Customer360({ id }: { id: string }) {
               className="admin-secondary"
               onClick={() => setEditing(true)}
             >
-              แก้ไขลูกค้า
+              Edit customer
             </button>
           )
         }
@@ -998,47 +999,47 @@ function Customer360({ id }: { id: string }) {
         <>
           <div className="admin-panel customer-profile">
             <div>
-              <small>โทรศัพท์</small>
+              <small>Phone</small>
               <b>{data.customer.phone}</b>
             </div>
             <div>
-              <small>อีเมล</small>
+              <small>Email</small>
               <b>{data.customer.email || "—"}</b>
             </div>
             <div>
-              <small>จังหวัด</small>
+              <small>Province</small>
               <b>{data.customer.province || "—"}</b>
             </div>
             <div>
-              <small>ช่องทาง</small>
+              <small>Channel</small>
               <b>{data.customer.preferredChannel}</b>
             </div>
             <div>
-              <small>การติดต่อ</small>
+              <small>Contact preference</small>
               <b>
                 {data.customer.dnc ? (
                   <Badge value="SKIPPED_DNC" />
                 ) : (
-                  "ติดต่อได้"
+                  "Contactable"
                 )}
               </b>
             </div>
           </div>
           <div className="admin-panel">
             <div className="panel-head">
-              <h2>กรมธรรม์ ({data.policies.length})</h2>
-              <a href="/backend/policies">ดูทั้งหมด</a>
+              <h2>Policies ({data.policies.length})</h2>
+              <a href="/backend/policies">View all</a>
             </div>
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
                   <tr>
-                    <th>เลขกรมธรรม์</th>
-                    <th>สินค้า</th>
-                    <th>ทะเบียน</th>
-                    <th>วันหมดอายุ</th>
-                    <th>เบี้ย</th>
-                    <th>สถานะ</th>
+                    <th>Policy number</th>
+                    <th>Products</th>
+                    <th>Registration</th>
+                    <th>Expiry date</th>
+                    <th>Premium</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1068,7 +1069,7 @@ function Customer360({ id }: { id: string }) {
           </div>
           <div className="admin-panel">
             <div className="panel-head">
-              <h2>คำขอติดต่อกลับ ({data.inquiries.length})</h2>
+              <h2>Callback requests ({data.inquiries.length})</h2>
             </div>
             {data.inquiries.length ? (
               data.inquiries.map((item) => (
@@ -1106,16 +1107,16 @@ const blankCoverage = () => ({
   medicalExpense: true,
   driverBail: true,
 });
-const coverageTH: Record<string, string> = {
-  thirdPartyProperty: "ทรัพย์สินคู่กรณี",
-  thirdPartyInjury: "ชีวิต/ร่างกายคู่กรณี",
-  ownVehicleCollision: "รถชน",
-  vehicleTheft: "รถสูญหาย",
-  fire: "ไฟไหม้",
-  flood: "น้ำท่วม",
-  personalAccident: "อุบัติเหตุส่วนบุคคล",
-  medicalExpense: "ค่ารักษาพยาบาล",
-  driverBail: "ประกันตัวผู้ขับขี่",
+const coverageLabels: Record<string, string> = {
+  thirdPartyProperty: "Third-party property",
+  thirdPartyInjury: "Third-party injury",
+  ownVehicleCollision: "Vehicle collision",
+  vehicleTheft: "Vehicle theft",
+  fire: "Fire",
+  flood: "Flood",
+  personalAccident: "Personal accident",
+  medicalExpense: "Medical expenses",
+  driverBail: "Driver bail",
 };
 function blankProduct(): Product {
   return {
@@ -1134,7 +1135,7 @@ function blankProduct(): Product {
     coverageLimits: {},
     features: [],
     terms: [],
-    eligibleVehicleTypes: ["รถยนต์ส่วนบุคคล"],
+    eligibleVehicleTypes: ["Private passenger car"],
     minVehicleAge: 0,
     maxVehicleAge: 20,
     active: true,
@@ -1154,7 +1155,7 @@ function Products() {
     `${base}/products?search=${encodeURIComponent(search)}&active=${active}&page=${page}`,
   );
   async function remove(item: Product) {
-    if (!window.confirm(`ลบสินค้า ${item.productName}?`)) return;
+    if (!window.confirm(`Delete product ${item.productName}?`)) return;
     try {
       await api(`${base}/products/${item.productId}`, { method: "DELETE" });
       refresh();
@@ -1165,15 +1166,15 @@ function Products() {
   return (
     <>
       <PageHead
-        eyebrow="ข้อมูลหลัก"
-        title="สินค้าและแบบประกัน"
-        description="จัดการแผนที่แสดงบนเว็บไซต์และใช้ในกรมธรรม์"
+        eyebrow="Records"
+        title="Products and plans"
+        description="Manage plans shown on the website and used in policies"
         action={
           <button
             className="admin-primary"
             onClick={() => setEditing(blankProduct())}
           >
-            <Plus size={17} /> เพิ่มสินค้า
+            <Plus size={17} /> Add product
           </button>
         }
       />
@@ -1182,7 +1183,7 @@ function Products() {
         <div className="admin-search">
           <Search size={17} />
           <input
-            placeholder="ค้นหาชื่อหรือรหัสสินค้า"
+            placeholder="Product name or ID"
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
@@ -1197,21 +1198,21 @@ function Products() {
             setPage(1);
           }}
         >
-          <option value="">ทุกสถานะ</option>
-          <option value="true">เผยแพร่</option>
-          <option value="false">ไม่เผยแพร่</option>
+          <option value="">All statuses</option>
+          <option value="true">Published</option>
+          <option value="false">Unpublished</option>
         </select>
       </div>
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
             <tr>
-              <th>รหัสสินค้า</th>
-              <th>ชื่อแผน</th>
-              <th>ประเภทรถ</th>
-              <th>ชั้น</th>
-              <th>เบี้ยเริ่มต้น</th>
-              <th>เผยแพร่</th>
+              <th>Product ID</th>
+              <th>Plan name</th>
+              <th>Vehicle type</th>
+              <th>Class</th>
+              <th>Starting premium</th>
+              <th>Published</th>
               <th></th>
             </tr>
           </thead>
@@ -1228,15 +1229,15 @@ function Products() {
                 <td>{money(item.startingPremium)}</td>
                 <td>
                   {item.active ? (
-                    <span className="dot-live">ใช้งาน</span>
+                    <span className="dot-live">Active</span>
                   ) : (
-                    "ปิด"
+                    "Inactive"
                   )}
                 </td>
                 <td className="row-actions">
-                  <button onClick={() => setEditing(item)}>แก้ไข</button>
+                  <button onClick={() => setEditing(item)}>Edit</button>
                   <button className="danger-link" onClick={() => remove(item)}>
-                    ลบ
+                    Delete
                   </button>
                 </td>
               </tr>
@@ -1292,13 +1293,13 @@ function ProductForm({
   }
   return (
     <Modal
-      title={item.productId ? `แก้ไข ${item.productName}` : "เพิ่มสินค้า"}
+      title={item.productId ? `Edit ${item.productName}` : "Add product"}
       onClose={onClose}
     >
       <form className="admin-form" onSubmit={save}>
         <div className="admin-form-grid">
           <label>
-            รหัสสินค้า
+            Product ID
             <input
               required
               value={form.productCode}
@@ -1319,7 +1320,7 @@ function ProductForm({
             />
           </label>
           <label className="wide">
-            ชื่อแผน
+            Plan name
             <input
               required
               value={form.productName}
@@ -1329,7 +1330,7 @@ function ProductForm({
             />
           </label>
           <label>
-            ประเภทสินค้า
+            Product category
             <input
               required
               value={form.productType}
@@ -1339,7 +1340,7 @@ function ProductForm({
             />
           </label>
           <label>
-            ประเภทรถ
+            Vehicle type
             <select
               value={form.vehicleType}
               onChange={(event) =>
@@ -1349,13 +1350,13 @@ function ProductForm({
                 })
               }
             >
-              <option value="CAR">รถยนต์</option>
-              <option value="MOTORCYCLE">รถจักรยานยนต์</option>
-              <option value="ADDON">ความคุ้มครองเสริม</option>
+              <option value="CAR">Car</option>
+              <option value="MOTORCYCLE">Motorcycle</option>
+              <option value="ADDON">Add-on coverage</option>
             </select>
           </label>
           <label>
-            ชั้นประกัน
+            Insurance class
             <input
               required
               value={form.insuranceClass}
@@ -1365,7 +1366,7 @@ function ProductForm({
             />
           </label>
           <label>
-            บริษัทประกัน
+            Insurer
             <input
               required
               value={form.insurerName}
@@ -1375,7 +1376,7 @@ function ProductForm({
             />
           </label>
           <label>
-            เบี้ยเริ่มต้น
+            Starting premium
             <input
               required
               type="number"
@@ -1390,7 +1391,7 @@ function ProductForm({
             />
           </label>
           <label>
-            ลำดับแสดง
+            Display order
             <input
               type="number"
               value={form.displayOrder}
@@ -1400,7 +1401,7 @@ function ProductForm({
             />
           </label>
           <label>
-            อายุรถต่ำสุด
+            Minimum vehicle age
             <input
               type="number"
               min="0"
@@ -1411,7 +1412,7 @@ function ProductForm({
             />
           </label>
           <label>
-            อายุรถสูงสุด
+            Maximum vehicle age
             <input
               type="number"
               min="0"
@@ -1422,7 +1423,7 @@ function ProductForm({
             />
           </label>
           <label className="wide">
-            คำอธิบายสั้น
+            Short description
             <input
               required
               value={form.shortDescription}
@@ -1432,7 +1433,7 @@ function ProductForm({
             />
           </label>
           <label className="wide">
-            รายละเอียด
+            Details
             <textarea
               required
               rows={3}
@@ -1443,7 +1444,7 @@ function ProductForm({
             />
           </label>
           <label className="wide">
-            จุดเด่น (หนึ่งบรรทัดต่อข้อ)
+            Highlights (one per line)
             <textarea
               rows={3}
               value={form.features.join("\n")}
@@ -1456,7 +1457,7 @@ function ProductForm({
             />
           </label>
           <label className="wide">
-            เงื่อนไข (หนึ่งบรรทัดต่อข้อ)
+            Conditions (one per line)
             <textarea
               rows={3}
               value={form.terms.join("\n")}
@@ -1469,7 +1470,7 @@ function ProductForm({
             />
           </label>
           <label className="wide">
-            ประเภทรถที่รับ (หนึ่งบรรทัดต่อข้อ)
+            Eligible vehicle types (one per line)
             <textarea
               rows={2}
               value={form.eligibleVehicleTypes.join("\n")}
@@ -1484,9 +1485,9 @@ function ProductForm({
             />
           </label>
         </div>
-        <div className="form-section-label">ความคุ้มครอง</div>
+        <div className="form-section-label">Coverage</div>
         <div className="checkbox-grid">
-          {Object.entries(coverageTH).map(([key, label]) => (
+          {Object.entries(coverageLabels).map(([key, label]) => (
             <label key={key} className="admin-check">
               <input
                 type="checkbox"
@@ -1502,16 +1503,16 @@ function ProductForm({
             </label>
           ))}
         </div>
-        <div className="form-section-label">วงเงินความคุ้มครอง</div>
+        <div className="form-section-label">Coverage limits</div>
         <div className="admin-form-grid">
-          {Object.entries(coverageTH)
+          {Object.entries(coverageLabels)
             .filter(([key]) => form.coverage[key as keyof Product["coverage"]])
             .map(([key, label]) => (
               <label key={key}>
                 {label}
                 <input
                   value={form.coverageLimits[key] || ""}
-                  placeholder="เช่น สูงสุด 1,000,000 บาท"
+                  placeholder="e.g. up to THB 1,000,000"
                   onChange={(event) =>
                     setForm({
                       ...form,
@@ -1534,7 +1535,7 @@ function ProductForm({
                 setForm({ ...form, active: event.target.checked })
               }
             />
-            เผยแพร่บนเว็บไซต์
+            Publish on website
           </label>
           <label className="admin-check">
             <input
@@ -1544,16 +1545,16 @@ function ProductForm({
                 setForm({ ...form, featured: event.target.checked })
               }
             />
-            แผนแนะนำ
+            Featured plan
           </label>
         </div>
         <ErrorNotice error={error} />
         <div className="form-actions">
           <button type="button" onClick={onClose}>
-            ยกเลิก
+            Cancel
           </button>
           <button className="admin-primary" disabled={busy}>
-            <Save size={16} /> บันทึก
+            <Save size={16} /> Save
           </button>
         </div>
       </form>
@@ -1627,7 +1628,7 @@ function PolicyList({ renewal }: { renewal: boolean }) {
     `${base}/${renewal ? "renewals" : "policies"}?search=${encodeURIComponent(search)}&renewalStatus=${status}&channel=${channel}&genesysStatus=${genesysStatus}&excludeDnc=${excludeDnc}&${days ? `daysTo=${days}&` : ""}page=${page}`,
   );
   async function remove(item: Policy) {
-    if (!window.confirm(`ลบกรมธรรม์ ${item.policyNumber}?`)) return;
+    if (!window.confirm(`Delete policy ${item.policyNumber}?`)) return;
     try {
       await api(`${base}/policies/${item.policyId}`, { method: "DELETE" });
       refresh();
@@ -1636,15 +1637,15 @@ function PolicyList({ renewal }: { renewal: boolean }) {
     }
   }
   async function bulkSync(ids = selected) {
-    if (!window.confirm(`ซิงก์ ${ids.length} กรมธรรม์ไป Genesys?`)) return;
+    if (!window.confirm(`Sync ${ids.length} policies to Genesys?`)) return;
     setSyncing(true);
     setResult("");
     setError("");
     setFailedIds([]);
-    setProgress(`กำลังซิงก์ 0 / ${ids.length}`);
+    setProgress(`Syncing 0 / ${ids.length}`);
     try {
       const output = await syncInBatches(ids, undefined, (processed, total) =>
-        setProgress(`กำลังซิงก์ ${processed} / ${total}`),
+        setProgress(`Syncing ${processed} / ${total}`),
       );
       const successful = output.filter((item) =>
         ["SYNCED", "ALREADY_SYNCED"].includes(item.status),
@@ -1653,7 +1654,7 @@ function PolicyList({ renewal }: { renewal: boolean }) {
         (item) => !["SYNCED", "ALREADY_SYNCED"].includes(item.status),
       );
       setResult(
-        `ประมวลผล ${output.length} · สำเร็จ ${successful} · ผิดพลาด ${failed.length}`,
+        `Processed ${output.length} · Completed ${successful} · Failed ${failed.length}`,
       );
       setFailedIds(failed.map((item) => item.policyId));
       setSelected([]);
@@ -1666,7 +1667,7 @@ function PolicyList({ renewal }: { renewal: boolean }) {
     }
   }
   async function singleSync(item: PolicyRow) {
-    if (!window.confirm(`ส่งกรมธรรม์ ${item.policyNumber} ไป Genesys?`)) return;
+    if (!window.confirm(`Send policy ${item.policyNumber} to Genesys?`)) return;
     setSyncing(true);
     setError("");
     try {
@@ -1685,12 +1686,12 @@ function PolicyList({ renewal }: { renewal: boolean }) {
   return (
     <>
       <PageHead
-        eyebrow={renewal ? "งานต่ออายุ" : "ข้อมูลหลัก"}
-        title={renewal ? "ติดตามการต่ออายุ" : "กรมธรรม์"}
+        eyebrow={renewal ? "Renewal work" : "Records"}
+        title={renewal ? "Renewal tracking" : "Policies"}
         description={
           renewal
-            ? "เฝ้าดูวันหมดอายุและสถานะการติดต่อลูกค้า"
-            : "จัดการข้อมูลกรมธรรม์และรถที่เอาประกัน"
+            ? "Track upcoming expiries and customer contact status"
+            : "Manage policies and insured vehicles"
         }
         action={
           !renewal && (
@@ -1698,7 +1699,7 @@ function PolicyList({ renewal }: { renewal: boolean }) {
               className="admin-primary"
               onClick={() => setEditing(blankPolicy())}
             >
-              <Plus size={17} /> เพิ่มกรมธรรม์
+              <Plus size={17} /> Add policy
             </button>
           )
         }
@@ -1708,13 +1709,13 @@ function PolicyList({ renewal }: { renewal: boolean }) {
       {progress && <div className="admin-progress">{progress}</div>}
       {failedIds.length > 0 && (
         <div className="admin-error">
-          รายการที่ผิดพลาด: {failedIds.join(", ")}{" "}
+          Failed records: {failedIds.join(", ")}{" "}
           <button
             className="admin-secondary"
             disabled={syncing}
             onClick={() => bulkSync(failedIds)}
           >
-            ลองอีกครั้ง
+            Retry
           </button>
         </div>
       )}
@@ -1722,7 +1723,7 @@ function PolicyList({ renewal }: { renewal: boolean }) {
         <div className="admin-search">
           <Search size={17} />
           <input
-            placeholder="เลขกรมธรรม์ ชื่อ เบอร์โทร หรือทะเบียน"
+            placeholder="Policy number, name, phone, or registration"
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
@@ -1737,10 +1738,10 @@ function PolicyList({ renewal }: { renewal: boolean }) {
             setPage(1);
           }}
         >
-          <option value="">ทุกสถานะ</option>
+          <option value="">All statuses</option>
           {statuses.map((item) => (
             <option key={item} value={item}>
-              {statusTH[item]}
+              {statusLabels[item]}
             </option>
           ))}
         </select>
@@ -1751,39 +1752,39 @@ function PolicyList({ renewal }: { renewal: boolean }) {
             setPage(1);
           }}
         >
-          <option value="">ทุกวันหมดอายุ</option>
-          <option value="7">ใน 7 วัน</option>
-          <option value="30">ใน 30 วัน</option>
-          <option value="60">ใน 60 วัน</option>
-          <option value="90">ใน 90 วัน</option>
+          <option value="">Any expiry date</option>
+          <option value="7">Within 7 days</option>
+          <option value="30">Within 30 days</option>
+          <option value="60">Within 60 days</option>
+          <option value="90">Within 90 days</option>
         </select>
         {renewal && (
           <>
             <select
-              aria-label="ช่องทาง"
+              aria-label="Channel"
               value={channel}
               onChange={(event) => {
                 setChannel(event.target.value);
                 setPage(1);
               }}
             >
-              <option value="">ทุกช่องทาง</option>
+              <option value="">All channels</option>
               {channels.map((value) => (
                 <option key={value}>{value}</option>
               ))}
             </select>
             <select
-              aria-label="สถานะ Genesys"
+              aria-label="Genesys status"
               value={genesysStatus}
               onChange={(event) => {
                 setGenesysStatus(event.target.value);
                 setPage(1);
               }}
             >
-              <option value="">ทุกสถานะ Genesys</option>
+              <option value="">All Genesys statuses</option>
               {["NOT_SYNCED", "SYNCED", "OUTDATED", "FAILED"].map((value) => (
                 <option key={value} value={value}>
-                  {statusTH[value]}
+                  {statusLabels[value]}
                 </option>
               ))}
             </select>
@@ -1796,7 +1797,7 @@ function PolicyList({ renewal }: { renewal: boolean }) {
                   setPage(1);
                 }}
               />{" "}
-              ตัด DNC
+              Exclude DNC
             </label>
           </>
         )}
@@ -1806,7 +1807,7 @@ function PolicyList({ renewal }: { renewal: boolean }) {
             disabled={!selected.length || syncing}
             onClick={() => bulkSync()}
           >
-            <CloudUpload size={16} /> ซิงก์ที่เลือก ({selected.length})
+            <CloudUpload size={16} /> Sync selected ({selected.length})
           </button>
         )}
       </div>
@@ -1818,7 +1819,7 @@ function PolicyList({ renewal }: { renewal: boolean }) {
                 <th>
                   <input
                     type="checkbox"
-                    aria-label="เลือกทั้งหมด"
+                    aria-label="Select all"
                     checked={
                       data.items.length > 0 &&
                       data.items.every((item) =>
@@ -1835,15 +1836,15 @@ function PolicyList({ renewal }: { renewal: boolean }) {
                   />
                 </th>
               )}
-              <th>เลขกรมธรรม์</th>
-              <th>ลูกค้า</th>
-              <th>สินค้า / รถ</th>
-              <th>หมดอายุ</th>
-              <th>คงเหลือ</th>
-              <th>สถานะ</th>
+              <th>Policy number</th>
+              <th>Customers</th>
+              <th>Products / Vehicle</th>
+              <th>Expired</th>
+              <th>Days left</th>
+              <th>Status</th>
               {renewal && (
                 <>
-                  <th>ช่องทาง</th>
+                  <th>Channel</th>
                   <th>DNC</th>
                 </>
               )}
@@ -1900,8 +1901,8 @@ function PolicyList({ renewal }: { renewal: boolean }) {
                 <td>{dateText(item.expiryDate)}</td>
                 <td className={item.daysUntilExpiry <= 7 ? "urgent" : ""}>
                   {item.daysUntilExpiry < 0
-                    ? `เลย ${-item.daysUntilExpiry} วัน`
-                    : `${item.daysUntilExpiry} วัน`}
+                    ? `${-item.daysUntilExpiry} days overdue`
+                    : `${item.daysUntilExpiry} days`}
                 </td>
                 <td>
                   <Badge value={item.renewalStatus} />
@@ -1918,14 +1919,14 @@ function PolicyList({ renewal }: { renewal: boolean }) {
                   <Badge value={item.genesys.syncStatus} />
                 </td>
                 <td className="row-actions">
-                  <button onClick={() => setEditing(item)}>แก้ไข</button>
+                  <button onClick={() => setEditing(item)}>Edit</button>
                   {renewal && (
                     <button
                       disabled={syncing || item.customer?.dnc}
                       onClick={() => singleSync(item)}
                     >
                       {item.genesys.syncStatus === "OUTDATED"
-                        ? "อัปเดต Genesys"
+                        ? "Update Genesys"
                         : "Push"}
                     </button>
                   )}
@@ -1934,7 +1935,7 @@ function PolicyList({ renewal }: { renewal: boolean }) {
                       className="danger-link"
                       onClick={() => remove(item)}
                     >
-                      ลบ
+                      Delete
                     </button>
                   )}
                 </td>
@@ -2002,14 +2003,14 @@ function PolicyForm({
     setForm({ ...form, vehicle: { ...form.vehicle, [field]: value } });
   return (
     <Modal
-      title={item.policyId ? `แก้ไข ${item.policyNumber}` : "เพิ่มกรมธรรม์"}
+      title={item.policyId ? `Edit ${item.policyNumber}` : "Add policy"}
       onClose={onClose}
     >
       <form className="admin-form" onSubmit={save}>
-        <div className="form-section-label">ข้อมูลกรมธรรม์</div>
+        <div className="form-section-label">Policy information</div>
         <div className="admin-form-grid">
           <label>
-            ลูกค้า
+            Customers
             <select
               required
               value={form.customerId}
@@ -2017,7 +2018,7 @@ function PolicyForm({
                 setForm({ ...form, customerId: event.target.value })
               }
             >
-              <option value="">เลือกลูกค้า</option>
+              <option value="">Select customer</option>
               {meta?.customers.map((value) => (
                 <option key={value.customerId} value={value.customerId}>
                   {value.customerId} · {value.firstName} {value.lastName}
@@ -2026,7 +2027,7 @@ function PolicyForm({
             </select>
           </label>
           <label>
-            สินค้า
+            Products
             <select
               required
               value={form.productId}
@@ -2034,7 +2035,7 @@ function PolicyForm({
                 setForm({ ...form, productId: event.target.value })
               }
             >
-              <option value="">เลือกสินค้า</option>
+              <option value="">Select product</option>
               {meta?.products.map((value) => (
                 <option key={value.productId} value={value.productId}>
                   {value.productName}
@@ -2043,7 +2044,7 @@ function PolicyForm({
             </select>
           </label>
           <label>
-            วันที่ซื้อ
+            Purchase date
             <input
               required
               type="date"
@@ -2054,7 +2055,7 @@ function PolicyForm({
             />
           </label>
           <label>
-            วันที่เริ่มคุ้มครอง
+            Coverage start date
             <input
               required
               type="date"
@@ -2065,7 +2066,7 @@ function PolicyForm({
             />
           </label>
           <label>
-            วันหมดอายุ
+            Expiry date
             <input
               required
               type="date"
@@ -2076,7 +2077,7 @@ function PolicyForm({
             />
           </label>
           <label>
-            บริษัทประกัน
+            Insurer
             <input
               required
               value={form.insurerName}
@@ -2086,7 +2087,7 @@ function PolicyForm({
             />
           </label>
           <label>
-            เบี้ยประกัน
+            Premium
             <input
               required
               type="number"
@@ -2098,7 +2099,7 @@ function PolicyForm({
             />
           </label>
           <label>
-            ทุนประกัน
+            Sum insured
             <input
               required
               type="number"
@@ -2110,21 +2111,21 @@ function PolicyForm({
             />
           </label>
         </div>
-        <div className="form-section-label">ข้อมูลรถ</div>
+        <div className="form-section-label">Vehicle information</div>
         <div className="admin-form-grid">
           <label>
-            ประเภทรถ
+            Vehicle type
             <select
               value={form.vehicle.vehicleType}
               onChange={(event) => vehicle("vehicleType", event.target.value)}
             >
-              <option value="CAR">รถยนต์</option>
-              <option value="MOTORCYCLE">รถจักรยานยนต์</option>
-              <option value="ADDON">อื่น ๆ</option>
+              <option value="CAR">Car</option>
+              <option value="MOTORCYCLE">Motorcycle</option>
+              <option value="ADDON">Other</option>
             </select>
           </label>
           <label>
-            ยี่ห้อ
+            Brand
             <input
               required
               value={form.vehicle.brand}
@@ -2132,7 +2133,7 @@ function PolicyForm({
             />
           </label>
           <label>
-            รุ่น
+            Model
             <input
               required
               value={form.vehicle.model}
@@ -2140,7 +2141,7 @@ function PolicyForm({
             />
           </label>
           <label>
-            ปีรถ
+            Vehicle year
             <input
               required
               type="number"
@@ -2151,7 +2152,7 @@ function PolicyForm({
             />
           </label>
           <label>
-            ทะเบียน
+            Registration
             <input
               required
               value={form.vehicle.licensePlate}
@@ -2159,7 +2160,7 @@ function PolicyForm({
             />
           </label>
           <label>
-            จังหวัด
+            Province
             <input
               required
               value={form.vehicle.province}
@@ -2167,10 +2168,10 @@ function PolicyForm({
             />
           </label>
         </div>
-        <div className="form-section-label">การติดตามต่ออายุ</div>
+        <div className="form-section-label">Renewal follow-up</div>
         <div className="admin-form-grid">
           <label>
-            สถานะ
+            Status
             <select
               value={form.renewalStatus}
               onChange={(event) =>
@@ -2182,13 +2183,13 @@ function PolicyForm({
             >
               {statuses.map((value) => (
                 <option key={value} value={value}>
-                  {statusTH[value]}
+                  {statusLabels[value]}
                 </option>
               ))}
             </select>
           </label>
           <label>
-            ช่องทางที่สะดวก
+            Preferred channel
             <select
               value={form.preferredChannel}
               onChange={(event) =>
@@ -2205,7 +2206,7 @@ function PolicyForm({
             </select>
           </label>
           <label>
-            ความสนใจของลูกค้า
+            Customer interest
             <select
               value={form.customerIntent}
               onChange={(event) =>
@@ -2226,7 +2227,7 @@ function PolicyForm({
             </select>
           </label>
           <label>
-            วันเวลาให้โทรกลับ
+            Callback date and time
             <input
               type="datetime-local"
               value={form.callbackDateTime?.slice(0, 16) || ""}
@@ -2250,7 +2251,7 @@ function PolicyForm({
                 setForm({ ...form, digitalSent: event.target.checked })
               }
             />{" "}
-            ส่งข้อมูลดิจิทัลแล้ว
+            Digital sent
           </label>
           <label className="admin-check">
             <input
@@ -2260,16 +2261,16 @@ function PolicyForm({
                 setForm({ ...form, voiceCalled: event.target.checked })
               }
             />{" "}
-            โทรหาแล้ว
+            Called
           </label>
         </div>
         <ErrorNotice error={error} />
         <div className="form-actions">
           <button type="button" onClick={onClose}>
-            ยกเลิก
+            Cancel
           </button>
           <button className="admin-primary" disabled={busy}>
-            <Save size={16} /> บันทึก
+            <Save size={16} /> Save
           </button>
         </div>
       </form>
@@ -2300,7 +2301,7 @@ function PolicyDetail({ id }: { id: string }) {
         `${base}/genesys/sync/policies/${id}`,
         { method: "POST" },
       );
-      setMessage(result.message || "ซิงก์สำเร็จ");
+      setMessage(result.message || "Sync completed");
       await load();
     } catch (reason) {
       setError((reason as Error).message);
@@ -2323,10 +2324,10 @@ function PolicyDetail({ id }: { id: string }) {
   return (
     <>
       <a className="admin-back" href="/backend/policies">
-        <ArrowLeft size={16} /> กลับรายการกรมธรรม์
+        <ArrowLeft size={16} /> Back to policies
       </a>
       <PageHead
-        eyebrow="รายละเอียดกรมธรรม์"
+        eyebrow="Policy details"
         title={policy?.policyNumber || id}
         description={
           policy
@@ -2340,15 +2341,15 @@ function PolicyDetail({ id }: { id: string }) {
                 className="admin-secondary"
                 onClick={() => setEditing(true)}
               >
-                แก้ไข
+                Edit
               </button>
               <button className="admin-secondary" onClick={viewPayload}>
-                ดู Genesys Payload
+                View Genesys payload
               </button>
               <button className="admin-primary" disabled={busy} onClick={sync}>
                 <CloudUpload size={16} />
                 {policy.genesys.syncStatus === "OUTDATED"
-                  ? "อัปเดต Genesys"
+                  ? "Update Genesys"
                   : "Push to Genesys"}
               </button>
             </>
@@ -2367,24 +2368,24 @@ function PolicyDetail({ id }: { id: string }) {
       {policy && (
         <div className="detail-admin-grid">
           <div className="admin-panel">
-            <h2>ข้อมูลกรมธรรม์</h2>
+            <h2>Policy information</h2>
             <div className="info-grid">
               {[
                 [
-                  "ลูกค้า",
+                  "Customers",
                   policy.customer
                     ? `${policy.customer.firstName} ${policy.customer.lastName}`
                     : policy.customerId,
                 ],
-                ["สินค้า", policy.product?.productName || policy.productId],
-                ["รถ", `${policy.vehicle.brand} ${policy.vehicle.model}`],
-                ["ทะเบียน", policy.vehicle.licensePlate],
-                ["วันที่เริ่ม", dateText(policy.effectiveDate)],
-                ["วันหมดอายุ", dateText(policy.expiryDate)],
-                ["เหลือเวลา", `${policy.daysUntilExpiry} วัน`],
-                ["เบี้ยประกัน", money(policy.premium)],
-                ["ทุนประกัน", money(policy.sumInsured)],
-                ["ช่องทาง", policy.preferredChannel],
+                ["Products", policy.product?.productName || policy.productId],
+                ["Vehicle", `${policy.vehicle.brand} ${policy.vehicle.model}`],
+                ["Registration", policy.vehicle.licensePlate],
+                ["Start date", dateText(policy.effectiveDate)],
+                ["Expiry date", dateText(policy.expiryDate)],
+                ["Days remaining", `${policy.daysUntilExpiry} days`],
+                ["Premium", money(policy.premium)],
+                ["Sum insured", money(policy.sumInsured)],
+                ["Channel", policy.preferredChannel],
               ].map(([label, value]) => (
                 <div key={label}>
                   <span>{label}</span>
@@ -2394,22 +2395,22 @@ function PolicyDetail({ id }: { id: string }) {
             </div>
           </div>
           <div className="admin-panel">
-            <h2>สถานะ</h2>
+            <h2>Status</h2>
             <div className="status-stack">
               <div>
-                การต่ออายุ <Badge value={policy.renewalStatus} />
+                Renewal <Badge value={policy.renewalStatus} />
               </div>
               <div>
                 Genesys <Badge value={policy.genesys.syncStatus} />
               </div>
               <div>
-                โทรแล้ว <b>{policy.voiceCalled ? "ใช่" : "ยัง"}</b>
+                Called <b>{policy.voiceCalled ? "Yes" : "No"}</b>
               </div>
               <div>
-                ส่งดิจิทัลแล้ว <b>{policy.digitalSent ? "ใช่" : "ยัง"}</b>
+                Digital sent <b>{policy.digitalSent ? "Yes" : "No"}</b>
               </div>
               <div>
-                ซิงก์ล่าสุด{" "}
+                Last sync{" "}
                 <b>
                   {policy.genesys.lastSyncAt
                     ? dateText(policy.genesys.lastSyncAt)
@@ -2507,7 +2508,7 @@ function Campaigns() {
   }
   async function save() {
     if (!name.trim()) {
-      setError("กรุณาระบุชื่อแคมเปญ");
+      setError("Enter a campaign name");
       return;
     }
     setBusy(true);
@@ -2521,7 +2522,7 @@ function Campaigns() {
         },
       );
       setSelected(item);
-      setMessage("บันทึกแคมเปญแล้ว");
+      setMessage("Campaign saved");
       await load();
     } catch (reason) {
       setError((reason as Error).message);
@@ -2530,7 +2531,8 @@ function Campaigns() {
     }
   }
   async function remove() {
-    if (!selected || !window.confirm(`ลบแคมเปญ ${selected.name}?`)) return;
+    if (!selected || !window.confirm(`Delete campaign ${selected.name}?`))
+      return;
     try {
       await api(`${base}/campaigns/${selected.campaignListId}`, {
         method: "DELETE",
@@ -2543,7 +2545,7 @@ function Campaigns() {
   }
   async function exportCsv() {
     if (!selected) {
-      setError("บันทึกแคมเปญก่อน export");
+      setError("Save the campaign before exporting");
       return;
     }
     setBusy(true);
@@ -2569,7 +2571,7 @@ function Campaigns() {
           ?.match(/filename="([^"]+)"/)?.[1] || "genesys-contacts.csv";
       link.click();
       URL.revokeObjectURL(url);
-      setMessage("ดาวน์โหลด CSV แล้ว");
+      setMessage("CSV downloaded");
       await load();
     } catch (reason) {
       setError((reason as Error).message);
@@ -2578,17 +2580,20 @@ function Campaigns() {
     }
   }
   async function sync(ids = selectedIds) {
-    if (!ids.length || !window.confirm(`ซิงก์ ${ids.length} รายการไป Genesys?`))
+    if (
+      !ids.length ||
+      !window.confirm(`Sync ${ids.length} records to Genesys?`)
+    )
       return;
     setBusy(true);
-    setProgress(`กำลังซิงก์ 0 / ${ids.length}`);
+    setProgress(`Syncing 0 / ${ids.length}`);
     setError("");
     setFailedResults([]);
     try {
       const result = await syncInBatches(
         ids,
         selected?.campaignListId,
-        (processed, total) => setProgress(`กำลังซิงก์ ${processed} / ${total}`),
+        (processed, total) => setProgress(`Syncing ${processed} / ${total}`),
       );
       const successful = result.filter((item) =>
         ["SYNCED", "ALREADY_SYNCED"].includes(item.status),
@@ -2598,7 +2603,7 @@ function Campaigns() {
       );
       setFailedResults(failed);
       setMessage(
-        `ประมวลผล ${result.length} · สำเร็จ ${successful} · ผิดพลาด ${failed.length}`,
+        `Processed ${result.length} · Completed ${successful} · Failed ${failed.length}`,
       );
       await showPreview();
       await load();
@@ -2613,11 +2618,11 @@ function Campaigns() {
     <>
       <PageHead
         eyebrow="Renewal & Campaign"
-        title="แคมเปญลูกค้า"
-        description="แบ่งกลุ่มลูกค้า ตรวจความพร้อม และส่งรายชื่อไป Genesys"
+        title="Customer campaigns"
+        description="Segment customers, check eligibility, and sync contacts to Genesys"
         action={
           <button className="admin-primary" onClick={() => select(null)}>
-            <Plus size={17} /> สร้างแคมเปญ
+            <Plus size={17} /> Create campaign
           </button>
         }
       />
@@ -2626,7 +2631,7 @@ function Campaigns() {
       {progress && <div className="admin-progress">{progress}</div>}
       {failedResults.length > 0 && (
         <div className="admin-error">
-          <b>รายการที่ผิดพลาด</b>
+          <b>Failed records</b>
           {failedResults.map((item) => (
             <div key={item.policyId}>
               {item.policyId}: {item.message}
@@ -2637,13 +2642,13 @@ function Campaigns() {
             disabled={busy}
             onClick={() => sync(failedResults.map((item) => item.policyId))}
           >
-            ลองอีกครั้ง
+            Retry
           </button>
         </div>
       )}
       <div className="campaign-layout">
         <aside className="campaign-list">
-          <h2>รายการแคมเปญ</h2>
+          <h2>Campaign lists</h2>
           {campaigns.map((item) => (
             <button
               key={item.campaignListId}
@@ -2654,7 +2659,7 @@ function Campaigns() {
             >
               <b>{item.name}</b>
               <small>
-                {item.recordCount} รายการ · {dateText(item.updatedAt)}
+                {item.recordCount} records · {dateText(item.updatedAt)}
               </small>
             </button>
           ))}
@@ -2663,24 +2668,24 @@ function Campaigns() {
         <div className="campaign-editor">
           <div className="admin-panel">
             <div className="panel-head">
-              <h2>{selected ? "แก้ไขแคมเปญ" : "แคมเปญใหม่"}</h2>
+              <h2>{selected ? "Edit campaign" : "New campaign"}</h2>
               {selected && (
                 <button className="danger-link" onClick={remove}>
-                  <Trash2 size={15} /> ลบ
+                  <Trash2 size={15} /> Delete
                 </button>
               )}
             </div>
             <div className="admin-form-grid">
               <label className="wide">
-                ชื่อแคมเปญ
+                Campaign name
                 <input
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="เช่น กรมธรรม์หมดอายุใน 30 วัน"
+                  placeholder="e.g. Policies expiring in 30 days"
                 />
               </label>
               <label className="wide">
-                รายละเอียด
+                Details
                 <textarea
                   rows={2}
                   value={description}
@@ -2688,17 +2693,17 @@ function Campaigns() {
                 />
               </label>
             </div>
-            <div className="form-section-label">ตัวกรอง</div>
+            <div className="form-section-label">Filters</div>
             <div className="admin-form-grid">
               <label>
-                สินค้า
+                Products
                 <select
                   value={filters.productId || ""}
                   onChange={(event) =>
                     filter("productId", event.target.value || undefined)
                   }
                 >
-                  <option value="">สินค้าทั้งหมด</option>
+                  <option value="">All products</option>
                   {meta?.products.map((item) => (
                     <option key={item.productId} value={item.productId}>
                       {item.productName}
@@ -2707,27 +2712,27 @@ function Campaigns() {
                 </select>
               </label>
               <label>
-                ประเภทรถ
+                Vehicle type
                 <select
                   value={filters.vehicleType || ""}
                   onChange={(event) =>
                     filter("vehicleType", event.target.value || undefined)
                   }
                 >
-                  <option value="">ทั้งหมด</option>
-                  <option value="CAR">รถยนต์</option>
-                  <option value="MOTORCYCLE">รถจักรยานยนต์</option>
+                  <option value="">All</option>
+                  <option value="CAR">Car</option>
+                  <option value="MOTORCYCLE">Motorcycle</option>
                 </select>
               </label>
               <label>
-                ชั้นประกัน
+                Insurance class
                 <select
                   value={filters.insuranceClass || ""}
                   onChange={(event) =>
                     filter("insuranceClass", event.target.value || undefined)
                   }
                 >
-                  <option value="">ทุกชั้น</option>
+                  <option value="">All classes</option>
                   {[
                     ...new Set(
                       meta?.products.map((item) => item.insuranceClass) || [],
@@ -2738,7 +2743,7 @@ function Campaigns() {
                 </select>
               </label>
               <label>
-                ยี่ห้อรถ
+                Vehicle brand
                 <input
                   value={filters.vehicleBrand || ""}
                   onChange={(event) =>
@@ -2747,7 +2752,7 @@ function Campaigns() {
                 />
               </label>
               <label>
-                บริษัทประกัน
+                Insurer
                 <input
                   value={filters.insurerName || ""}
                   onChange={(event) =>
@@ -2756,37 +2761,37 @@ function Campaigns() {
                 />
               </label>
               <label>
-                สถานะต่ออายุ
+                StatusRenewals
                 <select
                   value={filters.renewalStatus || ""}
                   onChange={(event) =>
                     filter("renewalStatus", event.target.value || undefined)
                   }
                 >
-                  <option value="">ทุกสถานะ</option>
+                  <option value="">All statuses</option>
                   {statuses.map((item) => (
                     <option key={item} value={item}>
-                      {statusTH[item]}
+                      {statusLabels[item]}
                     </option>
                   ))}
                 </select>
               </label>
               <label>
-                ช่องทาง
+                Channel
                 <select
                   value={filters.preferredChannel || ""}
                   onChange={(event) =>
                     filter("preferredChannel", event.target.value || undefined)
                   }
                 >
-                  <option value="">ทุกช่องทาง</option>
+                  <option value="">All channels</option>
                   {channels.map((item) => (
                     <option key={item}>{item}</option>
                   ))}
                 </select>
               </label>
               <label>
-                วันหมดอายุตั้งแต่
+                Expiry date from
                 <input
                   type="date"
                   value={filters.expiryFrom || ""}
@@ -2796,7 +2801,7 @@ function Campaigns() {
                 />
               </label>
               <label>
-                ถึงวันที่
+                To date
                 <input
                   type="date"
                   value={filters.expiryTo || ""}
@@ -2806,7 +2811,7 @@ function Campaigns() {
                 />
               </label>
               <label>
-                จำนวนวันจาก
+                Days until expiry from
                 <input
                   type="number"
                   value={filters.daysFrom ?? ""}
@@ -2821,7 +2826,7 @@ function Campaigns() {
                 />
               </label>
               <label>
-                ถึง
+                to
                 <input
                   type="number"
                   value={filters.daysTo ?? ""}
@@ -2836,7 +2841,7 @@ function Campaigns() {
                 />
               </label>
               <label>
-                เบี้ยขั้นต่ำ
+                Minimum premium
                 <input
                   type="number"
                   value={filters.premiumFrom ?? ""}
@@ -2851,7 +2856,7 @@ function Campaigns() {
                 />
               </label>
               <label>
-                เบี้ยสูงสุด
+                Maximum premium
                 <input
                   type="number"
                   value={filters.premiumTo ?? ""}
@@ -2866,7 +2871,7 @@ function Campaigns() {
                 />
               </label>
               <label>
-                จังหวัด
+                Province
                 <input
                   value={filters.province || ""}
                   onChange={(event) =>
@@ -2875,14 +2880,14 @@ function Campaigns() {
                 />
               </label>
               <label>
-                สถานะ Genesys
+                Genesys status
                 <select
                   value={filters.genesysStatus || ""}
                   onChange={(event) =>
                     filter("genesysStatus", event.target.value || undefined)
                   }
                 >
-                  <option value="">ทุกสถานะ</option>
+                  <option value="">All statuses</option>
                   {["NOT_SYNCED", "SYNCED", "OUTDATED", "FAILED"].map(
                     (item) => (
                       <option key={item}>{item}</option>
@@ -2891,7 +2896,7 @@ function Campaigns() {
                 </select>
               </label>
               <label>
-                ส่งดิจิทัลแล้ว
+                Digital sent
                 <select
                   value={
                     filters.digitalSent === undefined
@@ -2907,13 +2912,13 @@ function Campaigns() {
                     )
                   }
                 >
-                  <option value="">ทั้งหมด</option>
-                  <option value="true">ใช่</option>
-                  <option value="false">ยัง</option>
+                  <option value="">All</option>
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
                 </select>
               </label>
               <label>
-                โทรแล้ว
+                Called
                 <select
                   value={
                     filters.voiceCalled === undefined
@@ -2929,20 +2934,20 @@ function Campaigns() {
                     )
                   }
                 >
-                  <option value="">ทั้งหมด</option>
-                  <option value="true">ใช่</option>
-                  <option value="false">ยัง</option>
+                  <option value="">All</option>
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
                 </select>
               </label>
               <label>
-                ความสนใจลูกค้า
+                Customer interest
                 <select
                   value={filters.customerIntent || ""}
                   onChange={(event) =>
                     filter("customerIntent", event.target.value || undefined)
                   }
                 >
-                  <option value="">ทั้งหมด</option>
+                  <option value="">All</option>
                   {[
                     "UNKNOWN",
                     "INTERESTED",
@@ -2963,7 +2968,7 @@ function Campaigns() {
                 checked={filters.excludeDnc !== false}
                 onChange={(event) => filter("excludeDnc", event.target.checked)}
               />{" "}
-              ตัดลูกค้า DNC ออก
+              Exclude DNC customers
             </label>
             <div className="form-actions">
               <button
@@ -2971,27 +2976,27 @@ function Campaigns() {
                 disabled={busy}
                 onClick={showPreview}
               >
-                <Search size={16} /> ดูตัวอย่าง
+                <Search size={16} /> Preview
               </button>
               <button className="admin-primary" disabled={busy} onClick={save}>
-                <Save size={16} /> บันทึกแคมเปญ
+                <Save size={16} /> Save campaign
               </button>
             </div>
           </div>
           {preview && (
             <div className="admin-panel campaign-preview">
               <div className="panel-head">
-                <h2>ตัวอย่างรายชื่อ</h2>
-                <span>เลือก {selectedIds.length} รายการ</span>
+                <h2>Contact preview</h2>
+                <span>{selectedIds.length} selected</span>
               </div>
               <div className="preview-stats">
                 {[
-                  ["ตรงเงื่อนไข", preview.summary.matched],
-                  ["ส่งได้", preview.summary.eligible],
+                  ["Matched", preview.summary.matched],
+                  ["Eligible", preview.summary.eligible],
                   ["DNC", preview.summary.dncExcluded],
-                  ["เบอร์ไม่ถูกต้อง", preview.summary.invalidPhone],
-                  ["เบอร์ซ้ำ", preview.summary.duplicatePhone],
-                  ["ซิงก์แล้ว", preview.summary.alreadySynced],
+                  ["Invalid phone", preview.summary.invalidPhone],
+                  ["Duplicate phone", preview.summary.duplicatePhone],
+                  ["Synced", preview.summary.alreadySynced],
                 ].map(([label, value]) => (
                   <div key={String(label)}>
                     <b>{value}</b>
@@ -3003,12 +3008,12 @@ function Campaigns() {
                 <table className="admin-table">
                   <thead>
                     <tr>
-                      <th>เลือก</th>
-                      <th>ลูกค้า</th>
-                      <th>เลขกรมธรรม์</th>
-                      <th>โทรศัพท์</th>
-                      <th>วันหมดอายุ</th>
-                      <th>ผลตรวจ</th>
+                      <th>Select</th>
+                      <th>Customers</th>
+                      <th>Policy number</th>
+                      <th>Phone</th>
+                      <th>Expiry date</th>
+                      <th>Eligibility</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3090,16 +3095,16 @@ function Inquiries() {
   return (
     <>
       <PageHead
-        eyebrow="ลีดจากเว็บไซต์"
-        title="คำขอติดต่อกลับ"
-        description="ติดตามผู้สนใจจากเว็บไซต์"
+        eyebrow="Website leads"
+        title="Callback requests"
+        description="Follow up with website inquiries"
       />
       <ErrorNotice error={error} />
       <div className="admin-toolbar">
         <div className="admin-search">
           <Search size={17} />
           <input
-            placeholder="ค้นหาชื่อหรือเบอร์โทร"
+            placeholder="Name or phone"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -3108,7 +3113,7 @@ function Inquiries() {
           value={status}
           onChange={(event) => setStatus(event.target.value)}
         >
-          <option value="">ทุกสถานะ</option>
+          <option value="">All statuses</option>
           {["NEW", "CONTACTED", "CONVERTED", "CLOSED"].map((item) => (
             <option key={item}>{item}</option>
           ))}
@@ -3118,13 +3123,13 @@ function Inquiries() {
         <table className="admin-table">
           <thead>
             <tr>
-              <th>รหัส</th>
-              <th>ผู้สนใจ</th>
-              <th>เบอร์โทร</th>
-              <th>สินค้า</th>
-              <th>ช่องทาง / เวลา</th>
-              <th>วันที่ส่ง</th>
-              <th>สถานะ</th>
+              <th>ID</th>
+              <th>Prospect</th>
+              <th>Phone</th>
+              <th>Products</th>
+              <th>Channel / time</th>
+              <th>Submitted</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -3145,7 +3150,7 @@ function Inquiries() {
                 <td>{dateText(item.createdAt)}</td>
                 <td>
                   <select
-                    aria-label={`สถานะ ${item.inquiryId}`}
+                    aria-label={`Status for ${item.inquiryId}`}
                     value={item.status}
                     onChange={(event) => change(item, event.target.value)}
                   >
@@ -3192,25 +3197,25 @@ function Audit() {
   return (
     <>
       <PageHead
-        eyebrow="ระบบ"
-        title="บันทึกกิจกรรม"
-        description="ประวัติการแก้ไขข้อมูลและการตั้งค่า"
+        eyebrow="System"
+        title="Audit log"
+        description="History of data and configuration changes"
       />
       <ErrorNotice error={error} />
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
             <tr>
-              <th>วันเวลา</th>
-              <th>กิจกรรม</th>
-              <th>ผู้ดำเนินการ</th>
-              <th>รายการ</th>
+              <th>Date and time</th>
+              <th>Activity</th>
+              <th>Actor</th>
+              <th>Records</th>
             </tr>
           </thead>
           <tbody>
             {records?.business.map((item) => (
               <tr key={item.id}>
-                <td>{new Date(item.timestamp).toLocaleString("th-TH")}</td>
+                <td>{new Date(item.timestamp).toLocaleString("en-US")}</td>
                 <td>{item.action}</td>
                 <td>{item.actor}</td>
                 <td>{item.target || "—"}</td>
@@ -3241,7 +3246,7 @@ function SystemSettings() {
         method: "POST",
       });
       setBackup(result);
-      setMessage("สร้างข้อมูลสำรองแล้ว");
+      setMessage("Backup created");
     } catch (reason) {
       setError((reason as Error).message);
     } finally {
@@ -3251,7 +3256,7 @@ function SystemSettings() {
   async function reset() {
     if (
       confirm !== "RESET" ||
-      !window.confirm("ยืนยันรีเซ็ตข้อมูลสาธิต? ระบบจะสำรองข้อมูลก่อน")
+      !window.confirm("Reset demo data? A backup will be created first.")
     )
       return;
     setBusy(true);
@@ -3261,7 +3266,7 @@ function SystemSettings() {
         method: "POST",
         body: JSON.stringify({ confirmation: "RESET" }),
       });
-      setMessage("รีเซ็ตข้อมูลสาธิตแล้ว");
+      setMessage("Demo data reset");
       setConfirm("");
     } catch (reason) {
       setError((reason as Error).message);
@@ -3272,9 +3277,9 @@ function SystemSettings() {
   return (
     <>
       <PageHead
-        eyebrow="ระบบ"
-        title="ตั้งค่าระบบ"
-        description="จัดการบัญชีผู้ดูแลและข้อมูลสาธิต"
+        eyebrow="System"
+        title="System settings"
+        description="Manage the administrator account and demo data"
       />
       <ErrorNotice error={error} />
       {message && <div className="admin-success">{message}</div>}
@@ -3282,37 +3287,37 @@ function SystemSettings() {
         <PasswordSettings />
         <section className="admin-panel">
           <DatabaseBackup size={28} />
-          <h2>สำรองข้อมูล</h2>
+          <h2>Backup data</h2>
           <p>
-            สร้างสำเนาไฟล์ JSON ปัจจุบัน รวมข้อมูลลูกค้า กรมธรรม์ แคมเปญ
-            และการตั้งค่า
+            Create a JSON backup of customers, policies, campaigns, and
+            configuration.
           </p>
           <button
             className="admin-primary"
             disabled={busy}
             onClick={makeBackup}
           >
-            <DatabaseBackup size={16} /> สร้าง Backup
+            <DatabaseBackup size={16} /> Create backup
           </button>
           {backup && (
             <div className="backup-result">
               <b>{backup.directory}</b>
-              <small>{backup.files.length} ไฟล์</small>
+              <small>{backup.files.length} files</small>
               <a href={backup.downloadUrl}>
-                <ArrowDownToLine size={16} /> ดาวน์โหลด JSON
+                <ArrowDownToLine size={16} /> Download JSON
               </a>
             </div>
           )}
         </section>
         <section className="admin-panel">
           <RefreshCw size={28} />
-          <h2>รีเซ็ตข้อมูลสาธิต</h2>
+          <h2>Reset demo data</h2>
           <p>
-            ระบบจะสำรองข้อมูลเดิมก่อน แล้วแทนที่ข้อมูลธุรกิจด้วยตัวอย่างเริ่มต้น
-            การตั้งค่า Genesys จะคงอยู่
+            The system backs up current data before restoring the original demo
+            records. Genesys settings will be preserved
           </p>
           <label>
-            พิมพ์ RESET เพื่อยืนยัน
+            Type RESET to confirm
             <input
               value={confirm}
               onChange={(event) => setConfirm(event.target.value)}
@@ -3323,7 +3328,7 @@ function SystemSettings() {
             disabled={confirm !== "RESET" || busy}
             onClick={reset}
           >
-            <Trash2 size={16} /> รีเซ็ตข้อมูล
+            <Trash2 size={16} /> Reset data
           </button>
         </section>
       </div>
@@ -3342,11 +3347,7 @@ function PasswordSettings() {
     event.preventDefault();
     setError("");
     if (newPassword !== confirmPassword) {
-      setError("รหัสผ่านใหม่ไม่ตรงกัน");
-      return;
-    }
-    if (newPassword === currentPassword) {
-      setError("รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม");
+      setError("New passwords do not match");
       return;
     }
     setBusy(true);
@@ -3362,7 +3363,7 @@ function PasswordSettings() {
       window.location.href = "/backend/login?passwordChanged=1";
     } catch (reason) {
       setError(
-        reason instanceof Error ? reason.message : "เปลี่ยนรหัสผ่านไม่สำเร็จ",
+        reason instanceof Error ? reason.message : "Could not change password",
       );
       setCurrentPassword("");
     } finally {
@@ -3373,11 +3374,11 @@ function PasswordSettings() {
   return (
     <section className="admin-panel credential-panel">
       <KeyRound size={28} />
-      <h2>เปลี่ยนรหัสผ่านผู้ดูแล</h2>
+      <h2>Change administrator password</h2>
       <form className="credential-form" onSubmit={changePassword}>
         <div className="credential-fields">
           <label>
-            รหัสผ่านปัจจุบัน
+            Current password
             <input
               autoComplete="current-password"
               required
@@ -3387,11 +3388,9 @@ function PasswordSettings() {
             />
           </label>
           <label>
-            รหัสผ่านใหม่
+            New password
             <input
               autoComplete="new-password"
-              minLength={12}
-              maxLength={128}
               required
               type="password"
               value={newPassword}
@@ -3399,11 +3398,9 @@ function PasswordSettings() {
             />
           </label>
           <label>
-            ยืนยันรหัสผ่านใหม่
+            Confirm new password
             <input
               autoComplete="new-password"
-              minLength={12}
-              maxLength={128}
               required
               type="password"
               value={confirmPassword}
@@ -3417,8 +3414,7 @@ function PasswordSettings() {
           </div>
         )}
         <button className="admin-primary" disabled={busy} type="submit">
-          <KeyRound size={16} />{" "}
-          {busy ? "กำลังบันทึก..." : "บันทึกรหัสผ่านใหม่"}
+          <KeyRound size={16} /> {busy ? "Saving..." : "Save new password"}
         </button>
       </form>
     </section>
