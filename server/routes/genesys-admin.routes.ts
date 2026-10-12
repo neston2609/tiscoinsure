@@ -7,6 +7,7 @@ import { encryptSecret } from "../services/genesys/secret.service";
 import type { GenesysConfig } from "../services/genesys/types";
 import {
   bulkSyncPolicies,
+  recallPolicy,
   syncPolicy,
   validateContactListSchema,
 } from "../services/genesys/genesys-sync.service";
@@ -364,6 +365,17 @@ genesysAdminRouter.post(
           verify: true,
         }),
       );
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+genesysAdminRouter.post(
+  "/sync/policies/:id/recall",
+  async (request, response, next) => {
+    try {
+      response.json(await recallPolicy(request.params.id, request.user!.name));
     } catch (error) {
       next(error);
     }

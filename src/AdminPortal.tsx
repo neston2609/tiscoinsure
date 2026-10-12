@@ -18,6 +18,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  PhoneCall,
   Plus,
   RefreshCw,
   Save,
@@ -1782,9 +1783,33 @@ function PolicyList({ renewal }: { renewal: boolean }) {
     if (!window.confirm(`Send policy ${item.policyNumber} to Genesys?`)) return;
     setSyncing(true);
     setError("");
+    setResult("");
     try {
       const output = await api<{ message: string }>(
         `${base}/genesys/sync/policies/${item.policyId}`,
+        { method: "POST" },
+      );
+      setResult(output.message);
+      refresh();
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setSyncing(false);
+    }
+  }
+  async function recall(item: PolicyRow) {
+    if (
+      !window.confirm(
+        `Clear Genesys call history and queue ${item.policyNumber} for recall?`,
+      )
+    )
+      return;
+    setSyncing(true);
+    setError("");
+    setResult("");
+    try {
+      const output = await api<{ message: string }>(
+        `${base}/genesys/sync/policies/${item.policyId}/recall`,
         { method: "POST" },
       );
       setResult(output.message);
@@ -2046,14 +2071,39 @@ function PolicyList({ renewal }: { renewal: boolean }) {
                     <RefreshCw size={14} /> Renew
                   </button>
                   {renewal && (
-                    <button
-                      disabled={syncing || item.customer?.dnc}
-                      onClick={() => singleSync(item)}
-                    >
-                      {item.genesys.syncStatus === "OUTDATED"
-                        ? "Update Genesys"
-                        : "Push"}
-                    </button>
+                    <>
+                      <button
+                        disabled={syncing || item.customer?.dnc}
+                        onClick={() => singleSync(item)}
+                      >
+                        <CloudUpload size={14} />
+                        {item.genesys.syncStatus === "OUTDATED"
+                          ? "Update Genesys"
+                          : "Push"}
+                      </button>
+                      <button
+                        disabled={
+                          syncing ||
+                          item.customer?.dnc ||
+                          item.renewalStatus === "CANCELLED" ||
+                          !item.genesys.contactId ||
+                          item.genesys.syncStatus !== "SYNCED"
+                        }
+                        title={
+                          item.customer?.dnc
+                            ? "DNC customers cannot be recalled"
+                            : item.renewalStatus === "CANCELLED"
+                              ? "Cancelled policies cannot be recalled"
+                              : !item.genesys.contactId ||
+                                  item.genesys.syncStatus !== "SYNCED"
+                                ? "Push this policy to Genesys first"
+                                : "Clear Genesys call history and queue this contact for recall"
+                        }
+                        onClick={() => recall(item)}
+                      >
+                        <PhoneCall size={14} /> Recall
+                      </button>
+                    </>
                   )}
                   {!renewal && (
                     <button

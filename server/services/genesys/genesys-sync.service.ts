@@ -332,6 +332,99 @@ export async function syncPolicy(
   }
 }
 
+export async function recallPolicy(
+  policyId: string,
+  actor: string,
+): Promise<{
+  policyId: string;
+  status: "RECALLED";
+  message: string;
+  contactId: string;
+  contactListId: string;
+  contactListName: string;
+  verified: true;
+}> {
+  if (inFlight.has(policyId))
+    throw httpError(409, "This policy is already being synchronized");
+  inFlight.add(policyId);
+  try {
+    const policy = await policies.findById("policyId", policyId);
+    if (!policy) throw httpError(404, "Policy not found");
+    const [customer, config] = await Promise.all([
+      customers.findById("customerId", policy.customerId),
+      configService.getConfig(),
+    ]);
+    if (!customer) throw httpError(400, "Policy customer is missing");
+    if (!config.enabled)
+      throw httpError(400, "Genesys integration is disabled");
+    if (customer.dnc) throw httpError(400, "DNC customers cannot be recalled");
+    if (policy.renewalStatus === "CANCELLED")
+      throw httpError(400, "Cancelled policies cannot be recalled");
+    const { contactId, contactListId } = policy.genesys;
+    if (!contactId || !contactListId)
+      throw httpError(409, "Push this policy to Genesys before using Recall");
+    if (contactListId !== config.contactListId)
+      throw httpError(
+        409,
+        "This policy belongs to a previous Genesys Contact List. Push it to the current list before using Recall.",
+      );
+
+    let existing: GenesysContact;
+    try {
+      existing = await genesysApiClient.get<GenesysContact>(
+        contactPath(contactListId, contactId),
+      );
+    } catch (error) {
+      if (error instanceof GenesysApiError && error.status === 404)
+        throw httpError(
+          409,
+          "The Genesys contact no longer exists. Push this policy again before using Recall.",
+        );
+      throw error;
+    }
+
+    await genesysApiClient.post(
+      `${contactPath(contactListId)}?priority=true&clearSystemData=true&doNotQueue=false`,
+      [
+        {
+          id: contactId,
+          contactListId,
+          callable: true,
+          data: existing.data || {},
+        },
+      ],
+    );
+    await verifyContact(contactListId, contactId);
+    const contactListName = config.contactListName || contactListId;
+    await audit("RECALL_GENESYS_CONTACT", actor, policyId, {
+      contactId,
+      contactListId,
+      priority: true,
+      clearSystemData: true,
+      doNotQueue: false,
+      verified: true,
+    });
+    return {
+      policyId,
+      status: "RECALLED",
+      message: `Genesys system state cleared and ${policy.policyNumber} queued for recall in ${contactListName}. Contact ID: ${contactId}`,
+      contactId,
+      contactListId,
+      contactListName,
+      verified: true,
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Genesys recall failed";
+    await audit("GENESYS_RECALL_FAILED", actor, policyId, {
+      error: message.slice(0, 300),
+    });
+    throw error;
+  } finally {
+    inFlight.delete(policyId);
+  }
+}
+
 export async function bulkSyncPolicies(
   policyIds: string[],
   actor: string,

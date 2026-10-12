@@ -14,6 +14,7 @@ test(
     const realFetch = globalThis.fetch;
     let posts = 0,
       puts = 0,
+      recalls = 0,
       schemaValid = true,
       remoteContactExists = false;
     let lastPut: Record<string, unknown> = {};
@@ -25,7 +26,7 @@ test(
         { GenesysConfigService },
         { encryptSecret },
         { CONTACT_COLUMNS },
-        { syncPolicy },
+        { recallPolicy, syncPolicy },
       ] = await Promise.all([
         import("../server/domain/store"),
         import("../server/domain/business"),
@@ -61,6 +62,21 @@ test(
               : CONTACT_COLUMNS.filter((column) => column !== "vehicleType"),
             phoneColumns: [{ columnName: "phone", type: "Cell" }],
           });
+        if (
+          url.includes(
+            "/contactlists/list-1/contacts?priority=true&clearSystemData=true&doNotQueue=false",
+          ) &&
+          method === "POST"
+        ) {
+          recalls++;
+          const body = JSON.parse(String(init?.body)) as {
+            id: string;
+            callable: boolean;
+          }[];
+          assert.equal(body[0]?.id, "contact-1");
+          assert.equal(body[0]?.callable, true);
+          return Response.json(body);
+        }
         if (
           url.endsWith("/contactlists/list-1/contacts") &&
           method === "POST"
@@ -103,6 +119,11 @@ test(
       assert.match(forced.message, /Demo/);
       assert.match(forced.message, /contact-1/);
       assert.equal(puts, 1);
+      const recalled = await recallPolicy("POL00001", "test");
+      assert.equal(recalled.status, "RECALLED");
+      assert.equal(recalled.verified, true);
+      assert.match(recalled.message, /queued for recall/);
+      assert.equal(recalls, 1);
       await updateCustomer("CUST00001", { firstName: "สมศักดิ์" }, "test");
       assert.equal(
         (await policies.findById("policyId", "POL00001"))?.genesys.syncStatus,
@@ -134,6 +155,15 @@ test(
         (await syncPolicy("POL00001", "test")).status,
         "SKIPPED_DNC",
       );
+      await assert.rejects(
+        () => recallPolicy("POL00001", "test"),
+        /DNC customers cannot be recalled/,
+      );
+      await assert.rejects(
+        () => recallPolicy("POL00002", "test"),
+        /Push this policy to Genesys before using Recall/,
+      );
+      assert.equal(recalls, 1);
       assert.equal(posts, 2);
       assert.equal(puts, 2);
       schemaValid = false;
