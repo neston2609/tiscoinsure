@@ -358,7 +358,12 @@ genesysAdminRouter.post(
   "/sync/policies/:id",
   async (request, response, next) => {
     try {
-      response.json(await syncPolicy(request.params.id, request.user!.name));
+      response.json(
+        await syncPolicy(request.params.id, request.user!.name, undefined, {
+          force: true,
+          verify: true,
+        }),
+      );
     } catch (error) {
       next(error);
     }

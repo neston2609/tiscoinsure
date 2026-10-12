@@ -14,7 +14,8 @@ test(
     const realFetch = globalThis.fetch;
     let posts = 0,
       puts = 0,
-      schemaValid = true;
+      schemaValid = true,
+      remoteContactExists = false;
     let lastPut: Record<string, unknown> = {};
     try {
       const [
@@ -65,15 +66,20 @@ test(
           method === "POST"
         ) {
           posts++;
-          return Response.json([{ id: "contact-1" }]);
+          remoteContactExists = true;
+          return Response.json([{ id: `contact-${posts}` }]);
         }
-        if (url.endsWith("/contacts/contact-1") && method === "GET")
+        if (/\/contacts\/contact-\d+$/.test(url) && method === "GET") {
+          if (!remoteContactExists)
+            return Response.json({ message: "Not found" }, { status: 404 });
+          const id = url.split("/").at(-1);
           return Response.json({
-            id: "contact-1",
+            id,
             contactListId: "list-1",
             callable: true,
             data: { customField: "preserve" },
           });
+        }
         if (url.endsWith("/contacts/contact-1") && method === "PUT") {
           puts++;
           lastPut = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -88,6 +94,15 @@ test(
       const second = await syncPolicy("POL00001", "test");
       assert.equal(second.status, "ALREADY_SYNCED");
       assert.equal(posts, 1);
+      const forced = await syncPolicy("POL00001", "test", undefined, {
+        force: true,
+        verify: true,
+      });
+      assert.equal(forced.status, "SYNCED");
+      assert.equal(forced.verified, true);
+      assert.match(forced.message, /Demo/);
+      assert.match(forced.message, /contact-1/);
+      assert.equal(puts, 1);
       await updateCustomer("CUST00001", { firstName: "สมศักดิ์" }, "test");
       assert.equal(
         (await policies.findById("policyId", "POL00001"))?.genesys.syncStatus,
@@ -95,7 +110,7 @@ test(
       );
       const third = await syncPolicy("POL00001", "test");
       assert.equal(third.status, "SYNCED");
-      assert.equal(puts, 1);
+      assert.equal(puts, 2);
       assert.equal(posts, 1);
       assert.equal(
         (lastPut.data as Record<string, string>).customField,
@@ -105,18 +120,27 @@ test(
         (lastPut.data as Record<string, string>).firstName,
         "สมศักดิ์",
       );
+      remoteContactExists = false;
+      const recreated = await syncPolicy("POL00001", "test", undefined, {
+        force: true,
+        verify: true,
+      });
+      assert.equal(recreated.status, "SYNCED");
+      assert.equal(recreated.contactId, "contact-2");
+      assert.equal(recreated.verified, true);
+      assert.equal(posts, 2);
       await updateCustomer("CUST00001", { dnc: true }, "test");
       assert.equal(
         (await syncPolicy("POL00001", "test")).status,
         "SKIPPED_DNC",
       );
-      assert.equal(posts, 1);
-      assert.equal(puts, 1);
+      assert.equal(posts, 2);
+      assert.equal(puts, 2);
       schemaValid = false;
       const mismatch = await syncPolicy("POL00002", "test");
       assert.equal(mismatch.status, "SCHEMA_MISMATCH");
-      assert.equal(posts, 1);
-      assert.equal(puts, 1);
+      assert.equal(posts, 2);
+      assert.equal(puts, 2);
       assert.equal(
         (await customers.findById("customerId", "CUST00001"))?.dnc,
         true,

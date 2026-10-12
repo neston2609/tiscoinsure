@@ -13,7 +13,7 @@ import {
   products,
 } from "../../domain/store";
 import type { SyncStatus } from "../../domain/types";
-import { genesysApiClient } from "./genesys-api.client";
+import { GenesysApiError, genesysApiClient } from "./genesys-api.client";
 import { GenesysConfigService } from "./genesys-config.service";
 
 type ContactListSchema = {
@@ -44,6 +44,11 @@ export type SchemaResult = {
 };
 const configService = new GenesysConfigService();
 const inFlight = new Set<string>();
+
+type SyncOptions = {
+  force?: boolean;
+  verify?: boolean;
+};
 
 export function compareSchema(
   list: ContactListSchema,
@@ -120,6 +125,34 @@ function parseCreatedContact(result: unknown): GenesysContact | undefined {
   return undefined;
 }
 
+async function verifyContact(
+  contactListId: string,
+  contactId: string,
+): Promise<GenesysContact> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const contact = await genesysApiClient.get<GenesysContact>(
+        contactPath(contactListId, contactId),
+      );
+      if (contact.id === contactId && contact.contactListId === contactListId)
+        return contact;
+      lastError = new Error(
+        "Genesys returned a contact that does not match the configured Contact List.",
+      );
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof GenesysApiError) || error.status !== 404)
+        throw error;
+    }
+    if (attempt < 2)
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not verify the Genesys contact after synchronization.");
+}
+
 async function markStatus(
   policyId: string,
   status: SyncStatus,
@@ -138,11 +171,15 @@ export async function syncPolicy(
   policyId: string,
   actor: string,
   knownSchema?: SchemaResult,
+  options: SyncOptions = {},
 ): Promise<{
   policyId: string;
   status: string;
   message: string;
   contactId?: string;
+  contactListId?: string;
+  contactListName?: string;
+  verified?: boolean;
 }> {
   if (inFlight.has(policyId))
     throw httpError(409, "This policy is already being synchronized");
@@ -182,6 +219,7 @@ export async function syncPolicy(
     const contact = mapCampaignContact(policy, customer, product);
     const hash = payloadHash(contact);
     if (
+      !options.force &&
       policy.genesys.contactId &&
       policy.genesys.contactListId === config.contactListId &&
       policy.genesys.syncStatus === "SYNCED" &&
@@ -192,6 +230,8 @@ export async function syncPolicy(
         status: "ALREADY_SYNCED",
         message: "Already synchronized. No changes detected.",
         contactId: policy.genesys.contactId,
+        contactListId: config.contactListId,
+        contactListName: config.contactListName,
       };
     }
     const schema = knownSchema || (await validateContactListSchema());
@@ -201,24 +241,32 @@ export async function syncPolicy(
     }
     await markStatus(policyId, "SYNCING");
     let contactId = policy.genesys.contactId;
-    const existingInSameList = Boolean(
+    let existingInSameList = Boolean(
       contactId && policy.genesys.contactListId === config.contactListId,
     );
     if (existingInSameList) {
-      const existing = await genesysApiClient.get<GenesysContact>(
-        contactPath(config.contactListId, contactId),
-      );
-      const merged: GenesysContact = {
-        ...existing,
-        contactListId: config.contactListId,
-        callable: true,
-        data: { ...(existing.data || {}), ...contact },
-      };
-      await genesysApiClient.put(
-        contactPath(config.contactListId, contactId),
-        merged,
-      );
-    } else {
+      try {
+        const existing = await genesysApiClient.get<GenesysContact>(
+          contactPath(config.contactListId, contactId),
+        );
+        const merged: GenesysContact = {
+          ...existing,
+          contactListId: config.contactListId,
+          callable: true,
+          data: { ...(existing.data || {}), ...contact },
+        };
+        await genesysApiClient.put(
+          contactPath(config.contactListId, contactId),
+          merged,
+        );
+      } catch (error) {
+        if (!(error instanceof GenesysApiError) || error.status !== 404)
+          throw error;
+        contactId = "";
+        existingInSameList = false;
+      }
+    }
+    if (!existingInSameList) {
       const response = await genesysApiClient.post(
         contactPath(config.contactListId),
         [
@@ -235,6 +283,10 @@ export async function syncPolicy(
           "Genesys created a contact but did not return its ID. Check the contact list before retrying to avoid a duplicate.",
         );
     }
+    const verified = options.verify
+      ? await verifyContact(config.contactListId, contactId)
+      : undefined;
+    const contactListName = schema.contactListName || config.contactListName;
     await policies.mutate((rows) => {
       const current = rows.find((item) => item.policyId === policyId);
       if (!current) return;
@@ -252,15 +304,20 @@ export async function syncPolicy(
       existingInSameList ? "UPDATE_GENESYS_CONTACT" : "CREATE_GENESYS_CONTACT",
       actor,
       policyId,
-      { contactId, contactListId: config.contactListId },
+      {
+        contactId,
+        contactListId: config.contactListId,
+        verified: Boolean(verified),
+      },
     );
     return {
       policyId,
       status: "SYNCED",
-      message: existingInSameList
-        ? "Genesys contact updated"
-        : "Genesys contact created",
+      message: `${existingInSameList ? "Genesys contact updated" : "Genesys contact created"}${verified ? " and verified" : ""} in ${contactListName || config.contactListId}. Contact ID: ${contactId}`,
       contactId,
+      contactListId: config.contactListId,
+      contactListName,
+      verified: Boolean(verified),
     };
   } catch (error) {
     const message =
