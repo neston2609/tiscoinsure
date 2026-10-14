@@ -178,6 +178,32 @@ export type GenesysScheduleFrequency = "ONCE" | "DAILY" | "WEEKLY";
 export type GenesysScheduleRunStatus =
   "NEVER" | "RUNNING" | "SUCCESS" | "PARTIAL" | "FAILED";
 
+export const AGENT_CALLBACK_STATUSES = [
+  "SCHEDULED",
+  "COMPLETED",
+  "CANCELLED",
+] as const;
+export const AGENT_CALLBACK_PRIORITIES = ["NORMAL", "HIGH", "URGENT"] as const;
+export type AgentCallbackStatus = (typeof AGENT_CALLBACK_STATUSES)[number];
+export type AgentCallbackPriority = (typeof AGENT_CALLBACK_PRIORITIES)[number];
+
+export interface AgentCallback {
+  callbackId: string;
+  customerId: string;
+  policyId: string;
+  scheduledAt: string;
+  status: AgentCallbackStatus;
+  priority: AgentCallbackPriority;
+  assignedAgent: string;
+  notes: string;
+  outcomeNotes: string;
+  completedAt: string;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface GenesysScheduleTask {
   schedulerTaskId: string;
   name: string;

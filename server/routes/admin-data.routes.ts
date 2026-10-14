@@ -2,6 +2,7 @@ import { Router } from "express";
 import { daysUntilExpiry } from "../domain/campaign-contact";
 import {
   createBackup,
+  createAgentCallback,
   createCustomer,
   createPolicy,
   createProduct,
@@ -17,12 +18,14 @@ import {
   renewPolicyByNumber,
   searchAll,
   updateCustomer,
+  updateAgentCallback,
   updateInquiry,
   updatePolicy,
   updateProduct,
   writeBackupManifest,
 } from "../domain/business";
 import {
+  agentCallbacks,
   campaigns,
   customers,
   inquiries,
@@ -232,6 +235,140 @@ adminDataRouter.get("/policies", async (request, response) => {
 adminDataRouter.get("/renewals", async (request, response) => {
   response.json(await policyRows(request.query, true));
 });
+
+const bangkokDay = (value: string | Date) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const part = (type: string) =>
+    parts.find((item) => item.type === type)?.value || "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+};
+
+adminDataRouter.get("/agent-callbacks/options", async (_request, response) => {
+  const [allCustomers, allPolicies, allCallbacks] = await Promise.all([
+    customers.all(),
+    policies.all(),
+    agentCallbacks.all(),
+  ]);
+  const activePolicyIds = new Set(
+    allCallbacks
+      .filter((item) => item.status === "SCHEDULED")
+      .map((item) => item.policyId),
+  );
+  const customerMap = new Map(
+    allCustomers.map((item) => [item.customerId, item]),
+  );
+  const items = allPolicies
+    .map((policy) => ({
+      policy,
+      customer: customerMap.get(policy.customerId),
+      daysUntilExpiry: daysUntilExpiry(policy.expiryDate),
+    }))
+    .filter(
+      (item) =>
+        item.customer &&
+        !item.customer.dnc &&
+        !activePolicyIds.has(item.policy.policyId) &&
+        !["RENEWED", "CANCELLED"].includes(item.policy.renewalStatus) &&
+        item.daysUntilExpiry >= -90 &&
+        item.daysUntilExpiry <= 365,
+    )
+    .sort((a, b) => a.policy.expiryDate.localeCompare(b.policy.expiryDate));
+  response.json({ items });
+});
+
+adminDataRouter.get("/agent-callbacks", async (request, response) => {
+  const [allCallbacks, allCustomers, allPolicies] = await Promise.all([
+    agentCallbacks.all(),
+    customers.all(),
+    policies.all(),
+  ]);
+  const customerMap = new Map(
+    allCustomers.map((item) => [item.customerId, item]),
+  );
+  const policyMap = new Map(allPolicies.map((item) => [item.policyId, item]));
+  const now = new Date();
+  const today = bangkokDay(now);
+  const allRows = allCallbacks.map((callback) => {
+    const policy = policyMap.get(callback.policyId);
+    return {
+      ...callback,
+      customer: customerMap.get(callback.customerId),
+      policy,
+      daysUntilExpiry: policy ? daysUntilExpiry(policy.expiryDate) : 0,
+      overdue:
+        callback.status === "SCHEDULED" &&
+        Date.parse(callback.scheduledAt) < now.getTime(),
+    };
+  });
+  const search = string(request.query.search);
+  let rows = allRows;
+  if (search)
+    rows = rows.filter((row) =>
+      [
+        row.callbackId,
+        row.customer?.firstName,
+        row.customer?.lastName,
+        row.customer?.phone,
+        row.policy?.policyNumber,
+        row.assignedAgent,
+        row.notes,
+      ].some((value) => contains(String(value || ""), search)),
+    );
+  if (request.query.status)
+    rows = rows.filter((row) => row.status === request.query.status);
+  if (request.query.timing === "today")
+    rows = rows.filter(
+      (row) =>
+        row.status === "SCHEDULED" && bangkokDay(row.scheduledAt) === today,
+    );
+  if (request.query.timing === "upcoming")
+    rows = rows.filter(
+      (row) =>
+        row.status === "SCHEDULED" &&
+        Date.parse(row.scheduledAt) >= now.getTime(),
+    );
+  if (request.query.timing === "overdue")
+    rows = rows.filter((row) => row.overdue);
+  rows.sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
+  const { page, pageSize } = paging(request.query);
+  response.json({
+    items: rows.slice((page - 1) * pageSize, page * pageSize),
+    total: rows.length,
+    page,
+    pageSize,
+    summary: {
+      scheduled: allRows.filter((item) => item.status === "SCHEDULED").length,
+      today: allRows.filter(
+        (item) =>
+          item.status === "SCHEDULED" && bangkokDay(item.scheduledAt) === today,
+      ).length,
+      overdue: allRows.filter((item) => item.overdue).length,
+      completed: allRows.filter((item) => item.status === "COMPLETED").length,
+    },
+  });
+});
+
+adminDataRouter.post("/agent-callbacks", async (request, response) => {
+  response
+    .status(201)
+    .json(await createAgentCallback(request.body, request.user!.name));
+});
+
+adminDataRouter.put("/agent-callbacks/:id", async (request, response) => {
+  response.json(
+    await updateAgentCallback(
+      request.params.id,
+      request.body,
+      request.user!.name,
+    ),
+  );
+});
+
 adminDataRouter.get("/policies/renewal-events", (_request, response) => {
   response.setHeader("Content-Type", "text/event-stream");
   response.setHeader("Cache-Control", "no-cache, no-transform");

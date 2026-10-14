@@ -1303,6 +1303,10 @@ a {
   outline-color: var(--red);
   color: var(--ink);
 }
+.admin-toolbar select {
+  width: auto;
+  min-width: 150px;
+}
 .admin-search {
   display: flex;
   align-items: center;
@@ -1409,7 +1413,8 @@ a {
 .admin-badge.synced,
 .admin-badge.renewed,
 .admin-badge.eligible,
-.admin-badge.converted {
+.admin-badge.converted,
+.admin-badge.completed {
   color: #187151;
   background: #e8f5ee;
 }
@@ -1421,11 +1426,64 @@ a {
   color: #ae2b36;
   background: #fff0f1;
 }
+.admin-badge.cancelled,
+.admin-badge.urgent {
+  color: #ae2b36;
+  background: #fff0f1;
+}
 .admin-badge.outdated,
 .admin-badge.callback-requested,
-.admin-badge.contact-pending {
+.admin-badge.contact-pending,
+.admin-badge.high,
+.admin-badge.scheduled {
   color: #a15d0c;
   background: #fff5e2;
+}
+.callback-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: white;
+}
+.callback-summary > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px 16px;
+  border-right: 1px solid var(--line);
+}
+.callback-summary > div:last-child {
+  border-right: 0;
+}
+.callback-summary span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.callback-summary strong {
+  font-size: 20px;
+}
+.callback-table {
+  min-width: 1180px;
+}
+.callback-table tr.callback-overdue td:first-child {
+  box-shadow: inset 3px 0 #bb2833;
+}
+.callback-details {
+  max-width: 260px;
+  white-space: normal;
+}
+.callback-overdue-label {
+  color: #ae2b36 !important;
+  font-weight: 800;
+}
+.callback-form small {
+  color: var(--muted);
+  font-weight: 400;
 }
 .dot-live {
   display: inline-flex;
@@ -2125,6 +2183,15 @@ a {
   .preview-stats {
     grid-template-columns: repeat(3, 1fr);
   }
+  .callback-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .callback-summary > div:nth-child(2) {
+    border-right: 0;
+  }
+  .callback-summary > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
 }
 @media (max-width: 760px) {
   .public-container,
@@ -2363,6 +2430,17 @@ a {
   }
   .preview-stats {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .callback-summary {
+    grid-template-columns: 1fr;
+  }
+  .callback-summary > div,
+  .callback-summary > div:nth-child(2) {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .callback-summary > div:last-child {
+    border-bottom: 0;
   }
   .admin-toolbar > * {
     flex: 1;

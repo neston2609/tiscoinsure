@@ -18,6 +18,7 @@ import { publishPolicyRenewal } from "./policy-renewal-events";
 import { nextRenewalPeriod } from "./renewal-date";
 import { backupsDir, dataDir } from "./json-repository";
 import {
+  seedAgentCallbacks,
   seedCampaignLists,
   seedCustomers,
   seedInquiries,
@@ -26,6 +27,7 @@ import {
   emptyGenesys,
 } from "./seed";
 import {
+  agentCallbacks,
   audit,
   auditLog,
   campaigns,
@@ -37,8 +39,11 @@ import {
   products,
 } from "./store";
 import {
+  AGENT_CALLBACK_PRIORITIES,
+  AGENT_CALLBACK_STATUSES,
   CHANNELS,
   RENEWAL_STATUSES,
+  type AgentCallback,
   type Customer,
   type Policy,
   type Product,
@@ -132,6 +137,21 @@ const inquiryInput = z.object({
   preferredChannel: channel,
   preferredContactTime: z.string().trim().min(1).max(120),
   consent: z.literal(true),
+});
+const agentCallbackInput = z.object({
+  policyId: z.string().trim().min(1).max(80),
+  scheduledAt: z.string().datetime(),
+  priority: z.enum(AGENT_CALLBACK_PRIORITIES),
+  assignedAgent: z.string().trim().max(120),
+  notes: z.string().trim().max(1000),
+});
+const agentCallbackUpdate = z.object({
+  scheduledAt: z.string().datetime().optional(),
+  status: z.enum(AGENT_CALLBACK_STATUSES).optional(),
+  priority: z.enum(AGENT_CALLBACK_PRIORITIES).optional(),
+  assignedAgent: z.string().trim().max(120).optional(),
+  notes: z.string().trim().max(1000).optional(),
+  outcomeNotes: z.string().trim().max(2000).optional(),
 });
 
 export async function createCustomer(
@@ -337,6 +357,154 @@ export async function updatePolicy(
     return next;
   });
   await audit("UPDATE_POLICY", actor, id, { fields: Object.keys(data) });
+  return item;
+}
+
+async function callbackPolicy(policyId: string) {
+  const policy = await policies.findById("policyId", policyId);
+  if (!policy) throw httpError(404, "Policy not found");
+  const customer = await customers.findById("customerId", policy.customerId);
+  if (!customer) throw httpError(400, "Policy customer is missing");
+  if (customer.dnc)
+    throw httpError(400, "DNC customers cannot be scheduled for callback");
+  if (["RENEWED", "CANCELLED"].includes(policy.renewalStatus))
+    throw httpError(
+      409,
+      "Renewed or cancelled policies cannot be scheduled for callback",
+    );
+  return { policy, customer };
+}
+
+async function syncCallbackToPolicy(
+  callback: AgentCallback,
+  actor: string,
+): Promise<void> {
+  const policy = await policies.findById("policyId", callback.policyId);
+  if (!policy) return;
+  if (callback.status === "SCHEDULED") {
+    await updatePolicy(
+      callback.policyId,
+      {
+        callbackDateTime: callback.scheduledAt,
+        renewalStatus: "CALLBACK_REQUESTED",
+        customerIntent: "CALLBACK",
+      },
+      actor,
+    );
+    return;
+  }
+  await updatePolicy(
+    callback.policyId,
+    {
+      callbackDateTime: null,
+      renewalStatus: ["RENEWED", "CANCELLED"].includes(policy.renewalStatus)
+        ? policy.renewalStatus
+        : callback.status === "COMPLETED"
+          ? "CONTACTED"
+          : policy.renewalStatus === "CALLBACK_REQUESTED"
+            ? "CONTACT_PENDING"
+            : policy.renewalStatus,
+      ...(callback.status === "COMPLETED" ? { voiceCalled: true } : {}),
+    },
+    actor,
+  );
+}
+
+export async function createAgentCallback(
+  input: unknown,
+  actor: string,
+): Promise<AgentCallback> {
+  const data = agentCallbackInput.parse(input);
+  if (Date.parse(data.scheduledAt) < Date.now() - 60_000)
+    throw httpError(400, "Callback date and time must be in the future");
+  const { policy, customer } = await callbackPolicy(data.policyId);
+  const duplicate = (await agentCallbacks.all()).some(
+    (item) => item.policyId === data.policyId && item.status === "SCHEDULED",
+  );
+  if (duplicate)
+    throw httpError(409, "This policy already has an active callback schedule");
+  const item = await agentCallbacks.mutate((rows) => {
+    const timestamp = new Date().toISOString();
+    const callback: AgentCallback = {
+      callbackId: nextId("CALL", rows, "callbackId"),
+      customerId: customer.customerId,
+      policyId: policy.policyId,
+      scheduledAt: data.scheduledAt,
+      status: "SCHEDULED",
+      priority: data.priority,
+      assignedAgent: data.assignedAgent || actor,
+      notes: data.notes,
+      outcomeNotes: "",
+      completedAt: "",
+      createdBy: actor,
+      updatedBy: actor,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    rows.push(callback);
+    return callback;
+  });
+  await syncCallbackToPolicy(item, actor);
+  await audit("CREATE_AGENT_CALLBACK", actor, item.callbackId, {
+    customerId: item.customerId,
+    policyId: item.policyId,
+    scheduledAt: item.scheduledAt,
+  });
+  return item;
+}
+
+export async function updateAgentCallback(
+  id: string,
+  input: unknown,
+  actor: string,
+): Promise<AgentCallback> {
+  const data = agentCallbackUpdate.parse(input);
+  const existing = await agentCallbacks.findById("callbackId", id);
+  if (!existing) throw httpError(404, "Callback schedule not found");
+  const nextStatus = data.status ?? existing.status;
+  const nextScheduledAt = data.scheduledAt ?? existing.scheduledAt;
+  if (
+    nextStatus === "SCHEDULED" &&
+    Date.parse(nextScheduledAt) < Date.now() - 60_000
+  )
+    throw httpError(400, "Callback date and time must be in the future");
+  if (nextStatus === "SCHEDULED") {
+    await callbackPolicy(existing.policyId);
+    const duplicate = (await agentCallbacks.all()).some(
+      (item) =>
+        item.callbackId !== id &&
+        item.policyId === existing.policyId &&
+        item.status === "SCHEDULED",
+    );
+    if (duplicate)
+      throw httpError(
+        409,
+        "This policy already has another active callback schedule",
+      );
+  }
+  const item = await agentCallbacks.mutate((rows) => {
+    const index = rows.findIndex((row) => row.callbackId === id);
+    if (index < 0) throw httpError(404, "Callback schedule not found");
+    const status = data.status ?? rows[index].status;
+    rows[index] = {
+      ...rows[index],
+      ...data,
+      status,
+      completedAt:
+        status === "COMPLETED"
+          ? rows[index].completedAt || new Date().toISOString()
+          : "",
+      updatedBy: actor,
+      updatedAt: new Date().toISOString(),
+    };
+    return rows[index];
+  });
+  await syncCallbackToPolicy(item, actor);
+  await audit("UPDATE_AGENT_CALLBACK", actor, id, {
+    fields: Object.keys(data),
+    status: item.status,
+    policyId: item.policyId,
+  });
   return item;
 }
 
@@ -670,6 +838,7 @@ export async function resetDemoData(actor: string): Promise<void> {
   await inquiries.replaceAll(seedInquiries());
   await campaigns.replaceAll(seedCampaignLists());
   await genesysScheduleTasks.replaceAll([]);
+  await agentCallbacks.replaceAll(seedAgentCallbacks());
   await audit("RESET_DEMO_DATA", actor);
 }
 

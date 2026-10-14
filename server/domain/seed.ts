@@ -1,4 +1,5 @@
 import type {
+  AgentCallback,
   CampaignList,
   Channel,
   Coverage,
@@ -382,6 +383,31 @@ export function seedInquiries(): Inquiry[] {
     createdAt: now(),
     updatedAt: now(),
   }));
+}
+
+export function seedAgentCallbacks(): AgentCallback[] {
+  return seedPolicies()
+    .filter(
+      (policy) =>
+        policy.callbackDateTime &&
+        policy.renewalStatus === "CALLBACK_REQUESTED",
+    )
+    .map((policy, index) => ({
+      callbackId: `CALL${String(index + 1).padStart(5, "0")}`,
+      customerId: policy.customerId,
+      policyId: policy.policyId,
+      scheduledAt: policy.callbackDateTime!,
+      status: "SCHEDULED",
+      priority: index === 0 ? "HIGH" : "NORMAL",
+      assignedAgent: "",
+      notes: "Customer requested a renewal callback.",
+      outcomeNotes: "",
+      completedAt: "",
+      createdBy: "system",
+      updatedBy: "system",
+      createdAt: now(),
+      updatedAt: now(),
+    }));
 }
 
 const campaignSpecs = [

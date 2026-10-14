@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BarChart3,
+  CalendarClock,
   Check,
   Clock3,
   ChevronLeft,
@@ -18,6 +19,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Pencil,
   PhoneCall,
   Plus,
   RefreshCw,
@@ -40,6 +42,7 @@ import {
 import { api } from "./lib/api";
 import { THAI_PROVINCES } from "./lib/thai-provinces";
 import type {
+  AgentCallback,
   CampaignFilters,
   CampaignList,
   Customer,
@@ -63,6 +66,27 @@ type RenewalResult = {
   expiryDate: string;
   renewalStatus: string;
   alreadyRenewed: boolean;
+};
+type AgentCallbackRow = AgentCallback & {
+  customer?: Customer;
+  policy?: Policy;
+  daysUntilExpiry: number;
+  overdue: boolean;
+};
+type AgentCallbackOption = {
+  customer: Customer;
+  policy: Policy;
+  daysUntilExpiry: number;
+};
+type AgentCallbackDraft = {
+  callbackId?: string;
+  policyId: string;
+  scheduledAt: string;
+  status: AgentCallback["status"];
+  priority: AgentCallback["priority"];
+  assignedAgent: string;
+  notes: string;
+  outcomeNotes: string;
 };
 async function syncInBatches(
   policyIds: string[],
@@ -95,6 +119,20 @@ const dateText = (value?: string | null) =>
         year: "numeric",
       })
     : "—";
+const dateTimeText = (value?: string | null) =>
+  value
+    ? new Date(value).toLocaleString("en-GB", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : "—";
+const dateTimeInput = (value?: string) => {
+  const date = value ? new Date(value) : new Date(Date.now() + 60 * 60 * 1000);
+  date.setSeconds(0, 0);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
+};
 const channels = ["VOICE", "SMS", "EMAIL", "LINE", "DIGITAL"];
 const statuses = [
   "NOT_STARTED",
@@ -127,6 +165,11 @@ const statusLabels: Record<string, string> = {
   NEW: "New",
   CLOSED: "Closed",
   CONVERTED: "Completed",
+  SCHEDULED: "Scheduled",
+  COMPLETED: "Completed",
+  NORMAL: "Normal",
+  HIGH: "High",
+  URGENT: "Urgent",
 };
 const titleFor: Record<string, string> = {
   dashboard: "Business overview",
@@ -134,6 +177,7 @@ const titleFor: Record<string, string> = {
   products: "Products",
   policies: "Policies",
   renewals: "Renewals",
+  callbacks: "Agent Call Back",
   campaigns: "Campaigns",
   inquiries: "Callback requests",
   genesys: "Genesys Cloud",
@@ -146,6 +190,7 @@ const nav = [
   { key: "products", label: "Products", icon: ShieldCheck },
   { key: "policies", label: "Policies", icon: FileText },
   { key: "renewals", label: "Renewals", icon: RefreshCw },
+  { key: "callbacks", label: "Agent Call Back", icon: CalendarClock },
   { key: "campaigns", label: "Campaigns", icon: Filter },
   { key: "inquiries", label: "Callback requests", icon: ClipboardList },
   { key: "genesys", label: "Genesys Cloud", icon: CloudUpload },
@@ -438,6 +483,8 @@ function AdminPortal({ username }: { username: string }) {
             <Policies />
           ) : key === "renewals" ? (
             <Policies renewal />
+          ) : key === "callbacks" ? (
+            <AgentCallbacks username={username} />
           ) : key === "campaigns" ? (
             <Campaigns />
           ) : key === "inquiries" ? (
@@ -638,7 +685,7 @@ function Dashboard() {
               ["Total premium", money(kpis?.totalPremium || 0), "policies"],
               ["Expiring in 30 days", kpis?.expiring30, "renewals"],
               ["Contact pending", kpis?.contactPending, "renewals"],
-              ["Callback requested", kpis?.callbackRequested, "renewals"],
+              ["Callback requested", kpis?.callbackRequested, "callbacks"],
               ["Renewed", kpis?.renewed, "renewals"],
               ["New inquiries", kpis?.newInquiries, "inquiries"],
             ].map(([label, value, link]) => (
@@ -3286,6 +3333,467 @@ function Campaigns() {
           )}
         </div>
       </div>
+    </>
+  );
+}
+
+function AgentCallbacks({ username }: { username: string }) {
+  const [data, setData] = useState<{
+    items: AgentCallbackRow[];
+    total: number;
+    page: number;
+    pageSize: number;
+    summary: {
+      scheduled: number;
+      today: number;
+      overdue: number;
+      completed: number;
+    };
+  }>({
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: 20,
+    summary: { scheduled: 0, today: 0, overdue: 0, completed: 0 },
+  });
+  const [options, setOptions] = useState<AgentCallbackOption[]>([]);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [timing, setTiming] = useState("");
+  const [page, setPage] = useState(1);
+  const [version, setVersion] = useState(0);
+  const [draft, setDraft] = useState<AgentCallbackDraft | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    api<{ items: AgentCallbackOption[] }>(`${base}/agent-callbacks/options`)
+      .then((result) => setOptions(result.items))
+      .catch((reason) => setError(reason.message));
+  }, [version]);
+  useEffect(() => {
+    setLoading(true);
+    api<typeof data>(
+      `${base}/agent-callbacks?search=${encodeURIComponent(search)}&status=${status}&timing=${timing}&page=${page}`,
+    )
+      .then(setData)
+      .catch((reason) => setError(reason.message))
+      .finally(() => setLoading(false));
+  }, [search, status, timing, page, version]);
+
+  function startCreate() {
+    setError("");
+    setMessage("");
+    setDraft({
+      policyId: options[0]?.policy.policyId || "",
+      scheduledAt: dateTimeInput(),
+      status: "SCHEDULED",
+      priority: "NORMAL",
+      assignedAgent: username,
+      notes: "",
+      outcomeNotes: "",
+    });
+  }
+
+  function startEdit(item: AgentCallbackRow) {
+    setError("");
+    setMessage("");
+    setDraft({
+      callbackId: item.callbackId,
+      policyId: item.policyId,
+      scheduledAt: dateTimeInput(item.scheduledAt),
+      status: item.status,
+      priority: item.priority,
+      assignedAgent: item.assignedAgent,
+      notes: item.notes,
+      outcomeNotes: item.outcomeNotes,
+    });
+  }
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!draft) return;
+    setBusy(true);
+    setError("");
+    try {
+      const body = {
+        ...(!draft.callbackId ? { policyId: draft.policyId } : {}),
+        scheduledAt: new Date(draft.scheduledAt).toISOString(),
+        priority: draft.priority,
+        assignedAgent: draft.assignedAgent,
+        notes: draft.notes,
+        ...(draft.callbackId
+          ? { status: draft.status, outcomeNotes: draft.outcomeNotes }
+          : {}),
+      };
+      const saved = await api<AgentCallback>(
+        draft.callbackId
+          ? `${base}/agent-callbacks/${draft.callbackId}`
+          : `${base}/agent-callbacks`,
+        {
+          method: draft.callbackId ? "PUT" : "POST",
+          body: JSON.stringify(body),
+        },
+      );
+      setDraft(null);
+      setMessage(
+        draft.callbackId
+          ? `${saved.callbackId} updated.`
+          : `${saved.callbackId} scheduled successfully.`,
+      );
+      setVersion((value) => value + 1);
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeStatus(
+    item: AgentCallbackRow,
+    nextStatus: "COMPLETED" | "CANCELLED",
+  ) {
+    const action = nextStatus === "COMPLETED" ? "complete" : "cancel";
+    if (!window.confirm(`${action} callback ${item.callbackId}?`)) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await api(`${base}/agent-callbacks/${item.callbackId}`, {
+        method: "PUT",
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      setMessage(
+        nextStatus === "COMPLETED"
+          ? `${item.callbackId} marked completed.`
+          : `${item.callbackId} cancelled.`,
+      );
+      setVersion((value) => value + 1);
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const currentCallback = draft?.callbackId
+    ? data.items.find((item) => item.callbackId === draft.callbackId)
+    : undefined;
+  const currentCallbackOption =
+    currentCallback?.customer && currentCallback.policy
+      ? {
+          customer: currentCallback.customer,
+          policy: currentCallback.policy,
+          daysUntilExpiry: currentCallback.daysUntilExpiry,
+        }
+      : undefined;
+  const selectedOption =
+    options.find((item) => item.policy.policyId === draft?.policyId) ??
+    currentCallbackOption;
+  const policyOptions =
+    currentCallbackOption &&
+    !options.some(
+      (item) => item.policy.policyId === currentCallbackOption.policy.policyId,
+    )
+      ? [currentCallbackOption, ...options]
+      : options;
+  return (
+    <>
+      <PageHead
+        eyebrow="Renewal operations"
+        title="Agent Call Back"
+        description="Schedule and track customer renewal callbacks"
+        action={
+          <button className="admin-primary" onClick={startCreate}>
+            <Plus size={17} /> Schedule callback
+          </button>
+        }
+      />
+      <ErrorNotice error={error} />
+      {message && <div className="admin-success">{message}</div>}
+      <div className="callback-summary" aria-label="Callback summary">
+        {[
+          ["Scheduled", data.summary.scheduled],
+          ["Today", data.summary.today],
+          ["Overdue", data.summary.overdue],
+          ["Completed", data.summary.completed],
+        ].map(([label, value]) => (
+          <div key={String(label)}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="admin-toolbar">
+        <div className="admin-search">
+          <Search size={17} />
+          <input
+            placeholder="Customer, phone, policy, or agent"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+        <select
+          aria-label="Callback status"
+          value={status}
+          onChange={(event) => {
+            setStatus(event.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All statuses</option>
+          <option value="SCHEDULED">Scheduled</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select>
+        <select
+          aria-label="Callback timing"
+          value={timing}
+          onChange={(event) => {
+            setTiming(event.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Any time</option>
+          <option value="today">Today</option>
+          <option value="upcoming">Upcoming</option>
+          <option value="overdue">Overdue</option>
+        </select>
+      </div>
+      <div className="admin-table-wrap callback-table-wrap">
+        <table className="admin-table callback-table">
+          <thead>
+            <tr>
+              <th>Callback time</th>
+              <th>Customer</th>
+              <th>Expiring policy</th>
+              <th>Priority</th>
+              <th>Agent</th>
+              <th>Status</th>
+              <th>Details</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.items.map((item) => (
+              <tr
+                key={item.callbackId}
+                className={item.overdue ? "callback-overdue" : ""}
+              >
+                <td>
+                  <b>{dateTimeText(item.scheduledAt)}</b>
+                  <small>{item.callbackId}</small>
+                </td>
+                <td>
+                  {item.customer ? (
+                    <a
+                      className="table-link"
+                      href={`/backend/customers/${item.customerId}`}
+                    >
+                      {item.customer.firstName} {item.customer.lastName}
+                    </a>
+                  ) : (
+                    item.customerId
+                  )}
+                  <small>{item.customer?.phone}</small>
+                </td>
+                <td>
+                  <a
+                    className="table-link"
+                    href={`/backend/policies/${item.policyId}`}
+                  >
+                    {item.policy?.policyNumber || item.policyId}
+                  </a>
+                  <small>
+                    Expires {dateText(item.policy?.expiryDate)} ·{" "}
+                    {item.daysUntilExpiry} days
+                  </small>
+                </td>
+                <td>
+                  <Badge value={item.priority} />
+                </td>
+                <td>{item.assignedAgent || "Unassigned"}</td>
+                <td>
+                  <Badge value={item.status} />
+                  {item.overdue && (
+                    <small className="callback-overdue-label">Overdue</small>
+                  )}
+                </td>
+                <td className="callback-details">
+                  {item.notes || "—"}
+                  {item.outcomeNotes && <small>{item.outcomeNotes}</small>}
+                </td>
+                <td className="row-actions">
+                  <button title="Edit callback" onClick={() => startEdit(item)}>
+                    <Pencil size={14} /> Edit
+                  </button>
+                  {item.status === "SCHEDULED" && (
+                    <>
+                      <button
+                        disabled={busy}
+                        title="Mark callback completed"
+                        onClick={() => changeStatus(item, "COMPLETED")}
+                      >
+                        <Check size={14} /> Complete
+                      </button>
+                      <button
+                        className="danger-link"
+                        disabled={busy}
+                        title="Cancel callback"
+                        onClick={() => changeStatus(item, "CANCELLED")}
+                      >
+                        <X size={14} /> Cancel
+                      </button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {loading && <div className="admin-loading">Loading...</div>}
+        {!loading && !data.items.length && (
+          <Empty text="No callback schedules found" />
+        )}
+        <Pager
+          page={page}
+          pageSize={data.pageSize}
+          total={data.total}
+          onChange={setPage}
+        />
+      </div>
+      {draft && (
+        <Modal
+          title={draft.callbackId ? "Edit callback" : "Schedule callback"}
+          onClose={() => setDraft(null)}
+        >
+          <form className="admin-form callback-form" onSubmit={save}>
+            <div className="admin-form-grid">
+              <label className="wide">
+                Customer and expiring policy
+                <select
+                  required
+                  disabled={Boolean(draft.callbackId)}
+                  value={draft.policyId}
+                  onChange={(event) =>
+                    setDraft({ ...draft, policyId: event.target.value })
+                  }
+                >
+                  <option value="">Select a policy</option>
+                  {policyOptions.map((item) => (
+                    <option
+                      key={item.policy.policyId}
+                      value={item.policy.policyId}
+                    >
+                      {item.customer.firstName} {item.customer.lastName} ·{" "}
+                      {item.policy.policyNumber} · expires{" "}
+                      {dateText(item.policy.expiryDate)}
+                    </option>
+                  ))}
+                </select>
+                {selectedOption && (
+                  <small>
+                    {selectedOption.customer.phone} ·{" "}
+                    {selectedOption.daysUntilExpiry} days until expiry
+                  </small>
+                )}
+              </label>
+              <label>
+                Callback date and time
+                <input
+                  required
+                  type="datetime-local"
+                  value={draft.scheduledAt}
+                  onChange={(event) =>
+                    setDraft({ ...draft, scheduledAt: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Priority
+                <select
+                  value={draft.priority}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      priority: event.target.value as AgentCallback["priority"],
+                    })
+                  }
+                >
+                  <option value="NORMAL">Normal</option>
+                  <option value="HIGH">High</option>
+                  <option value="URGENT">Urgent</option>
+                </select>
+              </label>
+              <label>
+                Assigned agent
+                <input
+                  value={draft.assignedAgent}
+                  onChange={(event) =>
+                    setDraft({ ...draft, assignedAgent: event.target.value })
+                  }
+                />
+              </label>
+              {draft.callbackId && (
+                <label>
+                  Status
+                  <select
+                    value={draft.status}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        status: event.target.value as AgentCallback["status"],
+                      })
+                    }
+                  >
+                    <option value="SCHEDULED">Scheduled</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="CANCELLED">Cancelled</option>
+                  </select>
+                </label>
+              )}
+              <label className="wide">
+                Callback details
+                <textarea
+                  rows={3}
+                  placeholder="Customer request, preferred contact details, or renewal interest"
+                  value={draft.notes}
+                  onChange={(event) =>
+                    setDraft({ ...draft, notes: event.target.value })
+                  }
+                />
+              </label>
+              {draft.callbackId && (
+                <label className="wide">
+                  Outcome notes
+                  <textarea
+                    rows={3}
+                    placeholder="Record the call result or next action"
+                    value={draft.outcomeNotes}
+                    onChange={(event) =>
+                      setDraft({ ...draft, outcomeNotes: event.target.value })
+                    }
+                  />
+                </label>
+              )}
+            </div>
+            <ErrorNotice error={error} />
+            <div className="form-actions">
+              <button type="button" onClick={() => setDraft(null)}>
+                Cancel
+              </button>
+              <button className="admin-primary" disabled={busy}>
+                <Save size={16} /> {busy ? "Saving..." : "Save callback"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </>
   );
 }

@@ -80,6 +80,7 @@ test(
         });
 
       assert.equal((await request("/api/admin/customers")).status, 401);
+      assert.equal((await request("/api/admin/agent-callbacks")).status, 401);
       assert.equal((await request("/api/admin/genesys/config")).status, 401);
       assert.equal((await request("/api/admin/genesys/schedules")).status, 401);
       const publicProducts = (await (
@@ -149,6 +150,102 @@ test(
         "/api/admin/policies/POL00001",
       );
       assert.equal(sample.policyNumber, "MFEC-MC-2026-00001");
+      const callbackOptions = await get<{
+        items: { policy: { policyId: string } }[];
+      }>("/api/admin/agent-callbacks/options");
+      assert.ok(
+        callbackOptions.items.some(
+          (item) => item.policy.policyId === "POL00001",
+        ),
+      );
+      const callbackResponse = await request(
+        "/api/admin/agent-callbacks",
+        "POST",
+        {
+          policyId: "POL00001",
+          scheduledAt: "2099-12-31T03:00:00.000Z",
+          priority: "HIGH",
+          assignedAgent: "Test Agent",
+          notes: "Customer asked for a renewal callback.",
+        },
+        cookie,
+      );
+      assert.equal(
+        callbackResponse.status,
+        201,
+        await callbackResponse.clone().text(),
+      );
+      const callback = (await callbackResponse.json()) as {
+        callbackId: string;
+        customerId: string;
+        status: string;
+      };
+      assert.equal(callback.customerId, "CUST00001");
+      assert.equal(callback.status, "SCHEDULED");
+      assert.equal(
+        (
+          await request(
+            "/api/admin/agent-callbacks",
+            "POST",
+            {
+              policyId: "POL00001",
+              scheduledAt: "2099-12-31T04:00:00.000Z",
+              priority: "NORMAL",
+              assignedAgent: "",
+              notes: "Duplicate",
+            },
+            cookie,
+          )
+        ).status,
+        409,
+      );
+      const callbackPolicy = await get<{
+        renewalStatus: string;
+        customerIntent: string;
+        callbackDateTime: string;
+      }>("/api/admin/policies/POL00001");
+      assert.equal(callbackPolicy.renewalStatus, "CALLBACK_REQUESTED");
+      assert.equal(callbackPolicy.customerIntent, "CALLBACK");
+      assert.equal(callbackPolicy.callbackDateTime, "2099-12-31T03:00:00.000Z");
+      const callbackList = await get<{
+        items: { callbackId: string }[];
+        summary: { scheduled: number };
+      }>("/api/admin/agent-callbacks?status=SCHEDULED");
+      assert.ok(
+        callbackList.items.some(
+          (item) => item.callbackId === callback.callbackId,
+        ),
+      );
+      assert.ok(callbackList.summary.scheduled > 0);
+      const completedCallback = await request(
+        `/api/admin/agent-callbacks/${callback.callbackId}`,
+        "PUT",
+        {
+          status: "COMPLETED",
+          outcomeNotes: "Agent completed the renewal discussion.",
+        },
+        cookie,
+      );
+      assert.equal(completedCallback.status, 200);
+      assert.equal(
+        ((await completedCallback.json()) as { status: string }).status,
+        "COMPLETED",
+      );
+      const contactedPolicy = await get<{
+        renewalStatus: string;
+        callbackDateTime: string | null;
+        voiceCalled: boolean;
+      }>("/api/admin/policies/POL00001");
+      assert.equal(contactedPolicy.renewalStatus, "CONTACTED");
+      assert.equal(contactedPolicy.callbackDateTime, null);
+      assert.equal(contactedPolicy.voiceCalled, true);
+      const reopenPastCallback = await request(
+        `/api/admin/agent-callbacks/${callback.callbackId}`,
+        "PUT",
+        { status: "SCHEDULED", scheduledAt: "2020-01-01T03:00:00.000Z" },
+        cookie,
+      );
+      assert.equal(reopenPastCallback.status, 400);
       const createdResponse = await request(
         "/api/admin/customers",
         "POST",
@@ -524,6 +621,7 @@ test(
         >;
       }>(backup.downloadUrl);
       assert.ok(download.files["config/genesys.json"]);
+      assert.ok(download.files["agent-callbacks.json"]);
       assert.equal(download.files["config/genesys.json"].clientId, undefined);
       assert.equal(
         download.files["config/genesys.json"].clientSecretEncrypted,

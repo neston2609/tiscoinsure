@@ -8,6 +8,7 @@ import {
   seedProducts,
 } from "./seed";
 import type {
+  AgentCallback,
   AuditRecord,
   CampaignList,
   Customer,
@@ -41,6 +42,10 @@ export const genesysScheduleTasks = new JsonRepository<GenesysScheduleTask>(
   "genesys-schedule-tasks.json",
   () => [],
 );
+export const agentCallbacks = new JsonRepository<AgentCallback>(
+  "agent-callbacks.json",
+  () => [],
+);
 export const auditLog = new JsonRepository<AuditRecord>(
   "audit-log.json",
   () => [],
@@ -52,11 +57,41 @@ export const businessRepositories = [
   inquiries,
   campaigns,
   genesysScheduleTasks,
+  agentCallbacks,
   auditLog,
 ] as const;
 
 export async function initializeBusinessData(): Promise<void> {
   for (const repository of businessRepositories) await repository.initialize();
+  if ((await agentCallbacks.all()).length === 0) {
+    const callbackPolicies = (await policies.all()).filter(
+      (policy) =>
+        policy.callbackDateTime &&
+        policy.renewalStatus === "CALLBACK_REQUESTED",
+    );
+    if (callbackPolicies.length)
+      await agentCallbacks.replaceAll(
+        callbackPolicies.map((policy, index) => {
+          const timestamp = new Date().toISOString();
+          return {
+            callbackId: `CALL${String(index + 1).padStart(5, "0")}`,
+            customerId: policy.customerId,
+            policyId: policy.policyId,
+            scheduledAt: policy.callbackDateTime!,
+            status: "SCHEDULED",
+            priority: "NORMAL",
+            assignedAgent: "",
+            notes: "Migrated from the policy renewal callback.",
+            outcomeNotes: "",
+            completedAt: "",
+            createdBy: "system",
+            updatedBy: "system",
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          } satisfies AgentCallback;
+        }),
+      );
+  }
 }
 
 export async function audit(
