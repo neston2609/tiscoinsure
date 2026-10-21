@@ -113,6 +113,54 @@ test(
       assert.equal(login.status, 200);
       const cookie = login.headers.get("set-cookie")?.split(";")[0];
       assert.ok(cookie);
+      assert.deepEqual(
+        await (
+          await request(
+            "/api/admin/auth/session?portal=manage",
+            "GET",
+            undefined,
+            cookie,
+          )
+        ).json(),
+        { authenticated: true, username: "admin" },
+      );
+      assert.deepEqual(
+        await (
+          await request(
+            "/api/admin/auth/session?portal=genesys",
+            "GET",
+            undefined,
+            cookie,
+          )
+        ).json(),
+        { authenticated: false, username: "" },
+      );
+      assert.equal(
+        (
+          await request(
+            "/api/admin/auth/login",
+            "POST",
+            {
+              username: "admin",
+              password: "TestPassword123!",
+              portal: "genesys",
+            },
+            cookie,
+          )
+        ).status,
+        200,
+      );
+      assert.deepEqual(
+        await (
+          await request(
+            "/api/admin/auth/session?portal=genesys",
+            "GET",
+            undefined,
+            cookie,
+          )
+        ).json(),
+        { authenticated: true, username: "admin" },
+      );
       assert.equal(
         (await request("/api/admin/genesys/contact-lists/not-a-uuid")).status,
         401,

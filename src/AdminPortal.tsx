@@ -88,6 +88,7 @@ type AgentCallbackDraft = {
   notes: string;
   outcomeNotes: string;
 };
+type Portal = "manage" | "genesys";
 async function syncInBatches(
   policyIds: string[],
   campaignListId: string | undefined,
@@ -184,7 +185,7 @@ const titleFor: Record<string, string> = {
   audit: "Audit log",
   settings: "System settings",
 };
-const nav = [
+const managementNav = [
   { key: "dashboard", label: "Overview", icon: LayoutDashboard },
   { key: "customers", label: "Customers", icon: Users },
   { key: "products", label: "Products", icon: ShieldCheck },
@@ -193,29 +194,73 @@ const nav = [
   { key: "callbacks", label: "Agent Call Back", icon: CalendarClock },
   { key: "campaigns", label: "Campaigns", icon: Filter },
   { key: "inquiries", label: "Callback requests", icon: ClipboardList },
-  { key: "genesys", label: "Genesys Cloud", icon: CloudUpload },
   { key: "audit", label: "Audit log", icon: Activity },
   { key: "settings", label: "Settings", icon: Settings },
 ];
+const genesysNav = [
+  { key: "integration", label: "Integration", icon: ShieldCheck },
+  { key: "regions", label: "Regions", icon: Globe2 },
+  { key: "scheduler", label: "Scheduler", icon: Clock3 },
+];
+const portalRoot = (portal: Portal) =>
+  portal === "manage" ? "/manage" : "/genesys";
+const isPathFor = (path: string, root: string) =>
+  path === root || path.startsWith(`${root}/`);
+const legacyPortalPath = (path: string) => {
+  if (!isPathFor(path, "/backend")) return "";
+  if (isPathFor(path, "/backend/genesys"))
+    return path.replace(/^\/backend\/genesys/, "/genesys");
+  return path.replace(/^\/backend/, "/manage");
+};
 
 export function Root() {
   const path = window.location.pathname;
+  const legacyTarget = legacyPortalPath(path);
+  const portal: Portal | null = isPathFor(path, "/manage")
+    ? "manage"
+    : isPathFor(path, "/genesys")
+      ? "genesys"
+      : null;
   const [session, setSession] = useState<{
     authenticated: boolean;
     username: string;
   } | null>(null);
   useEffect(() => {
-    if (path.startsWith("/backend"))
-      api<{ authenticated: boolean; username: string }>(`${base}/auth/session`)
+    if (legacyTarget)
+      window.location.replace(
+        `${legacyTarget}${window.location.search}${window.location.hash}`,
+      );
+  }, [legacyTarget]);
+  useEffect(() => {
+    document.title =
+      portal === "genesys"
+        ? "MFEC Genesys Cloud"
+        : portal === "manage"
+          ? "MFEC Insurance Management"
+          : "MFEC Insurrance";
+  }, [portal]);
+  useEffect(() => {
+    if (portal && !legacyTarget)
+      api<{ authenticated: boolean; username: string }>(
+        `${base}/auth/session?portal=${portal}`,
+      )
         .then(setSession)
         .catch(() => setSession({ authenticated: false, username: "" }));
-  }, [path]);
-  if (!path.startsWith("/backend")) return <PublicEntry />;
+  }, [legacyTarget, path, portal]);
+  if (legacyTarget) return <div className="admin-loading">Loading...</div>;
+  if (!portal) return <PublicEntry />;
   if (!session) return <div className="admin-loading">Loading...</div>;
-  if (!session.authenticated) return <Login onLogin={setSession} />;
-  if (path === "/backend/login")
-    window.history.replaceState({}, "", "/backend");
-  return <AdminPortal username={session.username} />;
+  const root = portalRoot(portal);
+  const returnPath =
+    path === `${root}/login`
+      ? root
+      : `${path}${window.location.search}${window.location.hash}`;
+  if (!session.authenticated)
+    return (
+      <Login portal={portal} returnPath={returnPath} onLogin={setSession} />
+    );
+  if (path === `${root}/login`) window.history.replaceState({}, "", root);
+  return <AdminPortal username={session.username} portal={portal} />;
 }
 
 function PublicEntry() {
@@ -229,8 +274,12 @@ function PublicEntry() {
 }
 
 function Login({
+  portal,
+  returnPath,
   onLogin,
 }: {
+  portal: Portal;
+  returnPath: string;
   onLogin: (value: { authenticated: boolean; username: string }) => void;
 }) {
   const [username, setUsername] = useState("admin");
@@ -240,6 +289,8 @@ function Login({
   const passwordChanged = new URLSearchParams(window.location.search).has(
     "passwordChanged",
   );
+  const genesys = portal === "genesys";
+  const PortalIcon = genesys ? CloudUpload : ShieldCheck;
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -247,9 +298,12 @@ function Login({
     try {
       const result = await api<{ authenticated: boolean; username: string }>(
         `${base}/auth/login`,
-        { method: "POST", body: JSON.stringify({ username, password }) },
+        {
+          method: "POST",
+          body: JSON.stringify({ username, password, portal }),
+        },
       );
-      window.history.replaceState({}, "", "/backend");
+      window.history.replaceState({}, "", returnPath);
       onLogin(result);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Sign in failed");
@@ -258,17 +312,21 @@ function Login({
     }
   }
   return (
-    <div className="admin-login">
+    <div className={`admin-login ${genesys ? "genesys-login" : ""}`}>
       <div className="login-brand">
         <span>
-          <ShieldCheck size={27} />
+          <PortalIcon size={27} />
         </span>
-        <b>MFEC Insurrance</b>
-        <small>Management Portal</small>
+        <b>{genesys ? "MFEC Genesys Cloud" : "MFEC Insurrance"}</b>
+        <small>{genesys ? "GENESYS OPERATIONS" : "INSURANCE MANAGEMENT"}</small>
       </div>
       <form onSubmit={submit}>
         <h1>Sign in</h1>
-        <p>Manage insurance records and renewals</p>
+        <p>
+          {genesys
+            ? "Manage Genesys integration, regions, and schedules"
+            : "Manage customers, policies, and renewals"}
+        </p>
         {passwordChanged && (
           <div className="admin-success" role="status">
             Password updated. Sign in with your new password.
@@ -308,12 +366,22 @@ function Login({
   );
 }
 
-function AdminPortal({ username }: { username: string }) {
+function AdminPortal({
+  username,
+  portal,
+}: {
+  username: string;
+  portal: Portal;
+}) {
   const pathParts = window.location.pathname.split("/");
-  const key = pathParts[2] || "dashboard";
-  const genesysSection = ["regions", "scheduler"].includes(pathParts[3])
-    ? pathParts[3]
+  const isGenesys = portal === "genesys";
+  const key = isGenesys ? "genesys" : pathParts[2] || "dashboard";
+  const genesysSection = ["regions", "scheduler"].includes(pathParts[2])
+    ? pathParts[2]
     : "integration";
+  const activeNavKey = isGenesys ? genesysSection : key;
+  const portalNav = isGenesys ? genesysNav : managementNav;
+  const BrandIcon = isGenesys ? CloudUpload : ShieldCheck;
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [searchResult, setSearchResult] = useState<{
@@ -322,7 +390,7 @@ function AdminPortal({ username }: { username: string }) {
   } | null>(null);
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (search.trim().length >= 2)
+      if (!isGenesys && search.trim().length >= 2)
         api<{ customers: Customer[]; policies: Policy[] }>(
           `${base}/search?q=${encodeURIComponent(search)}`,
         )
@@ -331,74 +399,53 @@ function AdminPortal({ username }: { username: string }) {
       else setSearchResult(null);
     }, 250);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [isGenesys, search]);
   async function logout() {
-    await api(`${base}/auth/logout`, { method: "POST" });
-    window.location.href = "/backend/login";
+    await api(`${base}/auth/logout`, {
+      method: "POST",
+      body: JSON.stringify({ portal }),
+    });
+    window.location.href = `${portalRoot(portal)}/login`;
   }
   return (
-    <div className="admin-shell">
+    <div className={`admin-shell ${isGenesys ? "genesys-portal" : ""}`}>
       <aside className={menuOpen ? "admin-sidebar open" : "admin-sidebar"}>
         <div className="admin-sidebar-brand">
           <span>
-            <ShieldCheck size={21} />
+            <BrandIcon size={21} />
           </span>
           <b>
-            MFEC <strong>Insurrance</strong>
+            MFEC <strong>{isGenesys ? "Genesys" : "Insurrance"}</strong>
           </b>
-          <small>MANAGEMENT</small>
+          <small>
+            {isGenesys ? "GENESYS OPERATIONS" : "INSURANCE MANAGEMENT"}
+          </small>
         </div>
         <nav>
-          {nav.map(({ key: itemKey, label, icon: Icon }) =>
-            itemKey === "genesys" ? (
-              <div className="admin-nav-group" key={itemKey}>
-                <a
-                  className={key === itemKey ? "active" : ""}
-                  href="/backend/genesys"
-                >
-                  <Icon size={18} />
-                  {label}
-                </a>
-                {key === "genesys" && (
-                  <div className="admin-subnav">
-                    <a
-                      className={
-                        genesysSection === "integration" ? "active" : ""
-                      }
-                      href="/backend/genesys"
-                    >
-                      <ShieldCheck size={15} /> Integration
-                    </a>
-                    <a
-                      className={genesysSection === "regions" ? "active" : ""}
-                      href="/backend/genesys/regions"
-                    >
-                      <Globe2 size={15} /> Regions
-                    </a>
-                    <a
-                      className={genesysSection === "scheduler" ? "active" : ""}
-                      href="/backend/genesys/scheduler"
-                    >
-                      <Clock3 size={15} /> Scheduler
-                    </a>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <a
-                key={itemKey}
-                className={key === itemKey ? "active" : ""}
-                href={
-                  itemKey === "dashboard" ? "/backend" : `/backend/${itemKey}`
-                }
-              >
-                <Icon size={18} />
-                {label}
-              </a>
-            ),
-          )}
+          {portalNav.map(({ key: itemKey, label, icon: Icon }) => (
+            <a
+              key={itemKey}
+              className={activeNavKey === itemKey ? "active" : ""}
+              href={
+                isGenesys
+                  ? itemKey === "integration"
+                    ? "/genesys"
+                    : `/genesys/${itemKey}`
+                  : itemKey === "dashboard"
+                    ? "/manage"
+                    : `/manage/${itemKey}`
+              }
+            >
+              <Icon size={18} />
+              {label}
+            </a>
+          ))}
         </nav>
         <div className="sidebar-bottom">
+          <a href={isGenesys ? "/manage" : "/genesys"}>
+            {isGenesys ? <ShieldCheck size={17} /> : <CloudUpload size={17} />}
+            {isGenesys ? "Insurance management" : "Genesys Cloud"}
+          </a>
           <a href="/" target="_blank" rel="noreferrer">
             <Globe2 size={17} /> Open website
           </a>
@@ -417,63 +464,68 @@ function AdminPortal({ username }: { username: string }) {
             <Menu size={20} />
           </button>
           <div className="admin-breadcrumb">
-            MFEC Insurrance <ChevronRight size={14} />{" "}
+            {isGenesys ? "MFEC Genesys Cloud" : "MFEC Insurrance"}{" "}
+            <ChevronRight size={14} />{" "}
             <b>
-              {titleFor[key] || "Management"}
-              {key === "genesys" &&
-                ` / ${
-                  genesysSection === "regions"
-                    ? "Regions"
-                    : genesysSection === "scheduler"
-                      ? "Scheduler"
-                      : "Integration"
-                }`}
+              {isGenesys
+                ? genesysSection === "regions"
+                  ? "Regions"
+                  : genesysSection === "scheduler"
+                    ? "Scheduler"
+                    : "Integration"
+                : titleFor[key] || "Management"}
             </b>
           </div>
-          <div className="admin-global-search">
-            <Search size={17} />
-            <input
-              aria-label="Search"
-              placeholder="Search customers, policies, registration plates"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            {searchResult && (
-              <div className="search-popover">
-                <b>Customers</b>
-                {searchResult.customers.map((item) => (
-                  <a
-                    key={item.customerId}
-                    href={`/backend/customers/${item.customerId}`}
-                  >
-                    {item.firstName} {item.lastName}
-                    <small>{item.customerId}</small>
-                  </a>
-                ))}
-                <b>Policies</b>
-                {searchResult.policies.map((item) => (
-                  <a
-                    key={item.policyId}
-                    href={`/backend/policies/${item.policyId}`}
-                  >
-                    {item.policyNumber}
-                    <small>{item.vehicle.licensePlate}</small>
-                  </a>
-                ))}
-                {!searchResult.customers.length &&
-                  !searchResult.policies.length && (
-                    <span>No records found</span>
-                  )}
-              </div>
-            )}
-          </div>
+          {!isGenesys && (
+            <div className="admin-global-search">
+              <Search size={17} />
+              <input
+                aria-label="Search"
+                placeholder="Search customers, policies, registration plates"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              {searchResult && (
+                <div className="search-popover">
+                  <b>Customers</b>
+                  {searchResult.customers.map((item) => (
+                    <a
+                      key={item.customerId}
+                      href={`/manage/customers/${item.customerId}`}
+                    >
+                      {item.firstName} {item.lastName}
+                      <small>{item.customerId}</small>
+                    </a>
+                  ))}
+                  <b>Policies</b>
+                  {searchResult.policies.map((item) => (
+                    <a
+                      key={item.policyId}
+                      href={`/manage/policies/${item.policyId}`}
+                    >
+                      {item.policyNumber}
+                      <small>{item.vehicle.licensePlate}</small>
+                    </a>
+                  ))}
+                  {!searchResult.customers.length &&
+                    !searchResult.policies.length && (
+                      <span>No records found</span>
+                    )}
+                </div>
+              )}
+            </div>
+          )}
           <div className="admin-user">
             <span>{username.slice(0, 1).toUpperCase()}</span>
             {username}
           </div>
         </header>
         <main className="admin-content">
-          {key === "dashboard" ? (
+          {isGenesys ? (
+            <GenesysSettings
+              tab={genesysSection as "integration" | "regions" | "scheduler"}
+            />
+          ) : key === "dashboard" ? (
             <Dashboard />
           ) : key === "customers" ? (
             <Customers />
@@ -489,10 +541,6 @@ function AdminPortal({ username }: { username: string }) {
             <Campaigns />
           ) : key === "inquiries" ? (
             <Inquiries />
-          ) : key === "genesys" ? (
-            <GenesysSettings
-              tab={genesysSection as "integration" | "regions" | "scheduler"}
-            />
           ) : key === "audit" ? (
             <Audit />
           ) : key === "settings" ? (
@@ -692,7 +740,7 @@ function Dashboard() {
               <a
                 className="kpi-tile"
                 key={String(label)}
-                href={`/backend/${link}`}
+                href={`/manage/${link}`}
               >
                 <span>{label}</span>
                 <strong>
@@ -708,7 +756,7 @@ function Dashboard() {
             <div className="admin-panel">
               <div className="panel-head">
                 <h2>Policies nearing expiry</h2>
-                <a href="/backend/renewals">
+                <a href="/manage/renewals">
                   View records <ArrowRight size={15} />
                 </a>
               </div>
@@ -771,7 +819,7 @@ function Dashboard() {
             <div className="admin-panel">
               <div className="panel-head">
                 <h2>Genesys Sync</h2>
-                <a href="/backend/genesys">
+                <a href="/genesys">
                   Configure integration <ArrowRight size={15} />
                 </a>
               </div>
@@ -897,7 +945,7 @@ function CustomerList() {
               <tr key={item.customerId}>
                 <td>
                   <a
-                    href={`/backend/customers/${item.customerId}`}
+                    href={`/manage/customers/${item.customerId}`}
                     className="table-link"
                   >
                     {item.customerId}
@@ -1105,7 +1153,7 @@ function Customer360({ id }: { id: string }) {
   }, [id]);
   return (
     <>
-      <a className="admin-back" href="/backend/customers">
+      <a className="admin-back" href="/manage/customers">
         <ArrowLeft size={16} /> Back to customers
       </a>
       <PageHead
@@ -1159,7 +1207,7 @@ function Customer360({ id }: { id: string }) {
           <div className="admin-panel">
             <div className="panel-head">
               <h2>Policies ({data.policies.length})</h2>
-              <a href="/backend/policies">View all</a>
+              <a href="/manage/policies">View all</a>
             </div>
             <div className="admin-table-wrap">
               <table className="admin-table">
@@ -1179,7 +1227,7 @@ function Customer360({ id }: { id: string }) {
                       <td>
                         <a
                           className="table-link"
-                          href={`/backend/policies/${item.policyId}`}
+                          href={`/manage/policies/${item.policyId}`}
                         >
                           {item.policyNumber}
                         </a>
@@ -2057,7 +2105,7 @@ function PolicyList({ renewal }: { renewal: boolean }) {
                 <td>
                   <a
                     className="table-link"
-                    href={`/backend/policies/${item.policyId}`}
+                    href={`/manage/policies/${item.policyId}`}
                   >
                     {item.policyNumber}
                   </a>
@@ -2065,7 +2113,7 @@ function PolicyList({ renewal }: { renewal: boolean }) {
                 <td>
                   {item.customer ? (
                     <a
-                      href={`/backend/customers/${item.customerId}`}
+                      href={`/manage/customers/${item.customerId}`}
                       className="table-link"
                     >
                       {item.customer.firstName} {item.customer.lastName}
@@ -2575,7 +2623,7 @@ function PolicyDetail({ id }: { id: string }) {
   }
   return (
     <>
-      <a className="admin-back" href="/backend/policies">
+      <a className="admin-back" href="/manage/policies">
         <ArrowLeft size={16} /> Back to policies
       </a>
       <PageHead
@@ -3593,7 +3641,7 @@ function AgentCallbacks({ username }: { username: string }) {
                   {item.customer ? (
                     <a
                       className="table-link"
-                      href={`/backend/customers/${item.customerId}`}
+                      href={`/manage/customers/${item.customerId}`}
                     >
                       {item.customer.firstName} {item.customer.lastName}
                     </a>
@@ -3605,7 +3653,7 @@ function AgentCallbacks({ username }: { username: string }) {
                 <td>
                   <a
                     className="table-link"
-                    href={`/backend/policies/${item.policyId}`}
+                    href={`/manage/policies/${item.policyId}`}
                   >
                     {item.policy?.policyNumber || item.policyId}
                   </a>
@@ -4085,7 +4133,7 @@ function PasswordSettings() {
           confirmPassword,
         }),
       });
-      window.location.href = "/backend/login?passwordChanged=1";
+      window.location.href = "/manage/login?passwordChanged=1";
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Could not change password",

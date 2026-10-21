@@ -7,6 +7,8 @@ import { adminCredentials } from "../services/admin-credentials.service";
 
 export const authRouter = Router();
 
+const portalSchema = z.enum(["manage", "genesys"]);
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 8,
@@ -16,9 +18,22 @@ const loginLimiter = rateLimit({
 });
 
 authRouter.get("/session", async (request, response) => {
-  const authenticated = await adminCredentials.isSessionValid(
+  const portalResult =
+    request.query.portal === undefined
+      ? undefined
+      : portalSchema.safeParse(request.query.portal);
+  if (portalResult && !portalResult.success) {
+    response.status(400).json({ message: "Invalid portal" });
+    return;
+  }
+  const accountValid = await adminCredentials.isSessionValid(
     request.session.admin,
     request.session.adminCredentialVersion,
+  );
+  const authenticated = Boolean(
+    accountValid &&
+    (!portalResult ||
+      request.session.adminPortals?.includes(portalResult.data)),
   );
   response.json({
     authenticated,
@@ -30,12 +45,30 @@ authRouter.post("/login", loginLimiter, async (request, response, next) => {
   try {
     const username = String(request.body?.username ?? "");
     const password = String(request.body?.password ?? "");
+    const portal = portalSchema.parse(request.body?.portal ?? "manage");
     const account =
       username.length <= 100 && password.length <= 256
         ? await adminCredentials.authenticate(username, password)
         : null;
     if (!account) {
       response.status(401).json({ message: "Invalid username or password" });
+      return;
+    }
+    const currentSessionMatches =
+      request.session.admin === account.username &&
+      request.session.adminCredentialVersion === account.version;
+    if (currentSessionMatches) {
+      request.session.adminPortals = Array.from(
+        new Set([...(request.session.adminPortals ?? []), portal]),
+      );
+      request.session.save((saveError) => {
+        if (saveError) {
+          next(saveError);
+          return;
+        }
+        void audit("LOGIN", account.username, portal).catch(() => undefined);
+        response.json({ authenticated: true, username: account.username });
+      });
       return;
     }
     request.session.regenerate((error) => {
@@ -45,12 +78,13 @@ authRouter.post("/login", loginLimiter, async (request, response, next) => {
       }
       request.session.admin = account.username;
       request.session.adminCredentialVersion = account.version;
+      request.session.adminPortals = [portal];
       request.session.save((saveError) => {
         if (saveError) {
           next(saveError);
           return;
         }
-        void audit("LOGIN", account.username).catch(() => undefined);
+        void audit("LOGIN", account.username, portal).catch(() => undefined);
         response.json({ authenticated: true, username: account.username });
       });
     });
@@ -113,13 +147,39 @@ authRouter.post(
 
 authRouter.post("/logout", requireAdmin, (request, response, next) => {
   const user = request.user!.name;
+  const portalResult = portalSchema.safeParse(request.body?.portal);
+  if (request.body?.portal !== undefined && !portalResult.success) {
+    response.status(400).json({ message: "Invalid portal" });
+    return;
+  }
+  if (portalResult.success) {
+    const remaining = (request.session.adminPortals ?? []).filter(
+      (portal) => portal !== portalResult.data,
+    );
+    if (remaining.length) {
+      request.session.adminPortals = remaining;
+      request.session.save((error) => {
+        if (error) {
+          next(error);
+          return;
+        }
+        void audit("LOGOUT", user, portalResult.data).catch(() => undefined);
+        response.status(204).end();
+      });
+      return;
+    }
+  }
   request.session.destroy((error) => {
     if (error) {
       next(error);
       return;
     }
     response.clearCookie("mfec.sid");
-    void audit("LOGOUT", user).catch(() => undefined);
+    void audit(
+      "LOGOUT",
+      user,
+      portalResult.success ? portalResult.data : "",
+    ).catch(() => undefined);
     response.status(204).end();
   });
 });

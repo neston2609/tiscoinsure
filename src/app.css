@@ -1038,6 +1038,17 @@ a {
   font-size: 12px;
   margin-top: 23px;
 }
+.genesys-login .login-brand > span,
+.genesys-portal .admin-sidebar-brand > span,
+.genesys-portal .admin-sidebar nav a.active {
+  background: #18777b;
+}
+.genesys-login .admin-primary {
+  background: #18777b;
+}
+.genesys-portal .admin-sidebar-brand strong {
+  color: #56c1c2;
+}
 .admin-sidebar {
   position: sticky;
   top: 0;
@@ -1218,6 +1229,9 @@ a {
   align-items: center;
   gap: 8px;
   font-weight: 700;
+}
+.genesys-portal .admin-user {
+  margin-left: auto;
 }
 .admin-user span {
   width: 28px;

@@ -95,6 +95,14 @@ app.use("/api", (_request, response) =>
   response.status(404).json({ message: "API endpoint not found" }),
 );
 
+app.use("/backend", (request, response) => {
+  const legacyUrl = request.originalUrl;
+  const target = legacyUrl.startsWith("/backend/genesys")
+    ? legacyUrl.replace(/^\/backend\/genesys/, "/genesys")
+    : legacyUrl.replace(/^\/backend/, "/manage");
+  response.redirect(308, target);
+});
+
 if (process.env.NODE_ENV === "production") {
   const clientDir = path.resolve(__dirname, "..", "dist", "client");
   app.use(express.static(clientDir));
