@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { JsonRepository } from "./json-repository";
+import { AGENT_CALLBACK_INTENTS } from "./types";
 import {
   seedCampaignLists,
   seedCustomers,
@@ -80,6 +81,7 @@ export async function initializeBusinessData(): Promise<void> {
             scheduledAt: policy.callbackDateTime!,
             status: "SCHEDULED",
             priority: "NORMAL",
+            intent: "CALLBACK_REQUEST",
             assignedAgent: "",
             notes: "Migrated from the policy renewal callback.",
             outcomeNotes: "",
@@ -92,6 +94,13 @@ export async function initializeBusinessData(): Promise<void> {
         }),
       );
   }
+  const validIntents = new Set<string>(AGENT_CALLBACK_INTENTS);
+  const storedCallbacks = await agentCallbacks.all();
+  if (storedCallbacks.some((item) => !validIntents.has(item.intent)))
+    await agentCallbacks.mutate((rows) => {
+      for (const row of rows)
+        if (!validIntents.has(row.intent)) row.intent = "CALLBACK_REQUEST";
+    });
 }
 
 export async function audit(

@@ -1482,7 +1482,7 @@ a {
   font-size: 20px;
 }
 .callback-table {
-  min-width: 1180px;
+  min-width: 1320px;
 }
 .callback-table tr.callback-overdue td:first-child {
   box-shadow: inset 3px 0 #bb2833;

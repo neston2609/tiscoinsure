@@ -41,6 +41,7 @@ import {
 } from "react";
 import { api } from "./lib/api";
 import { THAI_PROVINCES } from "./lib/thai-provinces";
+import { AGENT_CALLBACK_INTENTS } from "../server/domain/types";
 import type {
   AgentCallback,
   CampaignFilters,
@@ -84,6 +85,7 @@ type AgentCallbackDraft = {
   scheduledAt: string;
   status: AgentCallback["status"];
   priority: AgentCallback["priority"];
+  intent: AgentCallback["intent"];
   assignedAgent: string;
   notes: string;
   outcomeNotes: string;
@@ -171,6 +173,16 @@ const statusLabels: Record<string, string> = {
   NORMAL: "Normal",
   HIGH: "High",
   URGENT: "Urgent",
+  RENEWAL_INTERESTED: "Renewal interested",
+  PREMIUM_INQUIRY: "Premium inquiry",
+  DISCOUNT_NEGOTIATION: "Discount negotiation",
+  COVERAGE_INQUIRY: "Coverage inquiry",
+  PLAN_COMPARISON: "Plan comparison",
+  PAYMENT_INQUIRY: "Payment inquiry",
+  POLICY_CHANGE: "Policy change",
+  COMPLAINT: "Complaint",
+  CALLBACK_REQUEST: "Callback request",
+  OTHER: "Other",
 };
 const titleFor: Record<string, string> = {
   dashboard: "Business overview",
@@ -3407,6 +3419,7 @@ function AgentCallbacks({ username }: { username: string }) {
   const [options, setOptions] = useState<AgentCallbackOption[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [intent, setIntent] = useState("");
   const [timing, setTiming] = useState("");
   const [page, setPage] = useState(1);
   const [version, setVersion] = useState(0);
@@ -3424,12 +3437,12 @@ function AgentCallbacks({ username }: { username: string }) {
   useEffect(() => {
     setLoading(true);
     api<typeof data>(
-      `${base}/agent-callbacks?search=${encodeURIComponent(search)}&status=${status}&timing=${timing}&page=${page}`,
+      `${base}/agent-callbacks?search=${encodeURIComponent(search)}&status=${status}&intent=${intent}&timing=${timing}&page=${page}`,
     )
       .then(setData)
       .catch((reason) => setError(reason.message))
       .finally(() => setLoading(false));
-  }, [search, status, timing, page, version]);
+  }, [search, status, intent, timing, page, version]);
 
   function startCreate() {
     setError("");
@@ -3439,6 +3452,7 @@ function AgentCallbacks({ username }: { username: string }) {
       scheduledAt: dateTimeInput(),
       status: "SCHEDULED",
       priority: "NORMAL",
+      intent: "CALLBACK_REQUEST",
       assignedAgent: username,
       notes: "",
       outcomeNotes: "",
@@ -3454,6 +3468,7 @@ function AgentCallbacks({ username }: { username: string }) {
       scheduledAt: dateTimeInput(item.scheduledAt),
       status: item.status,
       priority: item.priority,
+      intent: item.intent || "CALLBACK_REQUEST",
       assignedAgent: item.assignedAgent,
       notes: item.notes,
       outcomeNotes: item.outcomeNotes,
@@ -3470,6 +3485,7 @@ function AgentCallbacks({ username }: { username: string }) {
         ...(!draft.callbackId ? { policyId: draft.policyId } : {}),
         scheduledAt: new Date(draft.scheduledAt).toISOString(),
         priority: draft.priority,
+        intent: draft.intent,
         assignedAgent: draft.assignedAgent,
         notes: draft.notes,
         ...(draft.callbackId
@@ -3600,6 +3616,21 @@ function AgentCallbacks({ username }: { username: string }) {
           <option value="CANCELLED">Cancelled</option>
         </select>
         <select
+          aria-label="Callback intent"
+          value={intent}
+          onChange={(event) => {
+            setIntent(event.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All intents</option>
+          {AGENT_CALLBACK_INTENTS.map((value) => (
+            <option key={value} value={value}>
+              {statusLabels[value]}
+            </option>
+          ))}
+        </select>
+        <select
           aria-label="Callback timing"
           value={timing}
           onChange={(event) => {
@@ -3620,6 +3651,7 @@ function AgentCallbacks({ username }: { username: string }) {
               <th>Callback time</th>
               <th>Customer</th>
               <th>Expiring policy</th>
+              <th>Intent</th>
               <th>Priority</th>
               <th>Agent</th>
               <th>Status</th>
@@ -3661,6 +3693,9 @@ function AgentCallbacks({ username }: { username: string }) {
                     Expires {dateText(item.policy?.expiryDate)} ·{" "}
                     {item.daysUntilExpiry} days
                   </small>
+                </td>
+                <td>
+                  <Badge value={item.intent || "CALLBACK_REQUEST"} />
                 </td>
                 <td>
                   <Badge value={item.priority} />
@@ -3776,6 +3811,25 @@ function AgentCallbacks({ username }: { username: string }) {
                   <option value="NORMAL">Normal</option>
                   <option value="HIGH">High</option>
                   <option value="URGENT">Urgent</option>
+                </select>
+              </label>
+              <label>
+                Intent
+                <select
+                  required
+                  value={draft.intent}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      intent: event.target.value as AgentCallback["intent"],
+                    })
+                  }
+                >
+                  {AGENT_CALLBACK_INTENTS.map((value) => (
+                    <option key={value} value={value}>
+                      {statusLabels[value]}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label>

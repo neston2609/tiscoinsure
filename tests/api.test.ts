@@ -213,6 +213,7 @@ test(
           policyId: "POL00001",
           scheduledAt: "2099-12-31T03:00:00.000Z",
           priority: "HIGH",
+          intent: "RENEWAL_INTERESTED",
           assignedAgent: "Test Agent",
           notes: "Customer asked for a renewal callback.",
         },
@@ -227,9 +228,11 @@ test(
         callbackId: string;
         customerId: string;
         status: string;
+        intent: string;
       };
       assert.equal(callback.customerId, "CUST00001");
       assert.equal(callback.status, "SCHEDULED");
+      assert.equal(callback.intent, "RENEWAL_INTERESTED");
       assert.equal(
         (
           await request(
@@ -253,15 +256,28 @@ test(
         callbackDateTime: string;
       }>("/api/admin/policies/POL00001");
       assert.equal(callbackPolicy.renewalStatus, "CALLBACK_REQUESTED");
-      assert.equal(callbackPolicy.customerIntent, "CALLBACK");
+      assert.equal(callbackPolicy.customerIntent, "RENEWAL_INTERESTED");
       assert.equal(callbackPolicy.callbackDateTime, "2099-12-31T03:00:00.000Z");
+      const intentUpdate = await request(
+        `/api/admin/agent-callbacks/${callback.callbackId}`,
+        "PUT",
+        { intent: "PREMIUM_INQUIRY" },
+        cookie,
+      );
+      assert.equal(intentUpdate.status, 200);
+      assert.equal(
+        ((await intentUpdate.json()) as { intent: string }).intent,
+        "PREMIUM_INQUIRY",
+      );
       const callbackList = await get<{
-        items: { callbackId: string }[];
+        items: { callbackId: string; intent: string }[];
         summary: { scheduled: number };
-      }>("/api/admin/agent-callbacks?status=SCHEDULED");
+      }>("/api/admin/agent-callbacks?status=SCHEDULED&intent=PREMIUM_INQUIRY");
       assert.ok(
         callbackList.items.some(
-          (item) => item.callbackId === callback.callbackId,
+          (item) =>
+            item.callbackId === callback.callbackId &&
+            item.intent === "PREMIUM_INQUIRY",
         ),
       );
       assert.ok(callbackList.summary.scheduled > 0);
@@ -283,10 +299,12 @@ test(
         renewalStatus: string;
         callbackDateTime: string | null;
         voiceCalled: boolean;
+        customerIntent: string;
       }>("/api/admin/policies/POL00001");
       assert.equal(contactedPolicy.renewalStatus, "CONTACTED");
       assert.equal(contactedPolicy.callbackDateTime, null);
       assert.equal(contactedPolicy.voiceCalled, true);
+      assert.equal(contactedPolicy.customerIntent, "PREMIUM_INQUIRY");
       const reopenPastCallback = await request(
         `/api/admin/agent-callbacks/${callback.callbackId}`,
         "PUT",

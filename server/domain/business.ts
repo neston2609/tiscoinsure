@@ -39,6 +39,7 @@ import {
   products,
 } from "./store";
 import {
+  AGENT_CALLBACK_INTENTS,
   AGENT_CALLBACK_PRIORITIES,
   AGENT_CALLBACK_STATUSES,
   CHANNELS,
@@ -142,6 +143,7 @@ const agentCallbackInput = z.object({
   policyId: z.string().trim().min(1).max(80),
   scheduledAt: z.string().datetime(),
   priority: z.enum(AGENT_CALLBACK_PRIORITIES),
+  intent: z.enum(AGENT_CALLBACK_INTENTS).default("CALLBACK_REQUEST"),
   assignedAgent: z.string().trim().max(120),
   notes: z.string().trim().max(1000),
 });
@@ -149,6 +151,7 @@ const agentCallbackUpdate = z.object({
   scheduledAt: z.string().datetime().optional(),
   status: z.enum(AGENT_CALLBACK_STATUSES).optional(),
   priority: z.enum(AGENT_CALLBACK_PRIORITIES).optional(),
+  intent: z.enum(AGENT_CALLBACK_INTENTS).optional(),
   assignedAgent: z.string().trim().max(120).optional(),
   notes: z.string().trim().max(1000).optional(),
   outcomeNotes: z.string().trim().max(2000).optional(),
@@ -387,7 +390,7 @@ async function syncCallbackToPolicy(
       {
         callbackDateTime: callback.scheduledAt,
         renewalStatus: "CALLBACK_REQUESTED",
-        customerIntent: "CALLBACK",
+        customerIntent: callback.intent,
       },
       actor,
     );
@@ -397,6 +400,7 @@ async function syncCallbackToPolicy(
     callback.policyId,
     {
       callbackDateTime: null,
+      customerIntent: callback.intent,
       renewalStatus: ["RENEWED", "CANCELLED"].includes(policy.renewalStatus)
         ? policy.renewalStatus
         : callback.status === "COMPLETED"
@@ -432,6 +436,7 @@ export async function createAgentCallback(
       scheduledAt: data.scheduledAt,
       status: "SCHEDULED",
       priority: data.priority,
+      intent: data.intent,
       assignedAgent: data.assignedAgent || actor,
       notes: data.notes,
       outcomeNotes: "",
@@ -449,6 +454,7 @@ export async function createAgentCallback(
     customerId: item.customerId,
     policyId: item.policyId,
     scheduledAt: item.scheduledAt,
+    intent: item.intent,
   });
   return item;
 }

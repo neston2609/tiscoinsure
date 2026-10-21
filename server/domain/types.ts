@@ -184,8 +184,21 @@ export const AGENT_CALLBACK_STATUSES = [
   "CANCELLED",
 ] as const;
 export const AGENT_CALLBACK_PRIORITIES = ["NORMAL", "HIGH", "URGENT"] as const;
+export const AGENT_CALLBACK_INTENTS = [
+  "RENEWAL_INTERESTED",
+  "PREMIUM_INQUIRY",
+  "DISCOUNT_NEGOTIATION",
+  "COVERAGE_INQUIRY",
+  "PLAN_COMPARISON",
+  "PAYMENT_INQUIRY",
+  "POLICY_CHANGE",
+  "COMPLAINT",
+  "CALLBACK_REQUEST",
+  "OTHER",
+] as const;
 export type AgentCallbackStatus = (typeof AGENT_CALLBACK_STATUSES)[number];
 export type AgentCallbackPriority = (typeof AGENT_CALLBACK_PRIORITIES)[number];
+export type AgentCallbackIntent = (typeof AGENT_CALLBACK_INTENTS)[number];
 
 export interface AgentCallback {
   callbackId: string;
@@ -194,6 +207,7 @@ export interface AgentCallback {
   scheduledAt: string;
   status: AgentCallbackStatus;
   priority: AgentCallbackPriority;
+  intent: AgentCallbackIntent;
   assignedAgent: string;
   notes: string;
   outcomeNotes: string;

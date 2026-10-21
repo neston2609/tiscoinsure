@@ -399,6 +399,7 @@ export function seedAgentCallbacks(): AgentCallback[] {
       scheduledAt: policy.callbackDateTime!,
       status: "SCHEDULED",
       priority: index === 0 ? "HIGH" : "NORMAL",
+      intent: "CALLBACK_REQUEST",
       assignedAgent: "",
       notes: "Customer requested a renewal callback.",
       outcomeNotes: "",

@@ -315,12 +315,15 @@ adminDataRouter.get("/agent-callbacks", async (request, response) => {
         row.customer?.lastName,
         row.customer?.phone,
         row.policy?.policyNumber,
+        row.intent,
         row.assignedAgent,
         row.notes,
       ].some((value) => contains(String(value || ""), search)),
     );
   if (request.query.status)
     rows = rows.filter((row) => row.status === request.query.status);
+  if (request.query.intent)
+    rows = rows.filter((row) => row.intent === request.query.intent);
   if (request.query.timing === "today")
     rows = rows.filter(
       (row) =>
