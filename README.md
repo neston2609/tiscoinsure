@@ -13,25 +13,26 @@ npm run build
 npm start
 ```
 
-Create a server-only `.env` from `.env.example` before `npm start`. Set persistent random values for `APP_SECRET` and `SESSION_SECRET`, and a strong `ADMIN_PASSWORD` for the first boot. The application hashes this bootstrap password into `data/.auth/admin.json`; later changes are made under `/backend/settings` and persist independently of `.env`. Once the credential file exists, remove the bootstrap `ADMIN_PASSWORD` from `.env` so an old password cannot become a fallback if the credential file is lost. The production server listens on `127.0.0.1:3000` unless `HOST`/`PORT` are set. For local development run `npm run dev:server` and `npm run dev:client` in separate terminals; Vite is at `http://localhost:5173` and proxies `/api` to the Express server on port 3000. The development-only default login is `admin` / `ChangeMe123!`; override it via `.env` for any shared environment.
+Create a server-only `.env` from `.env.example` before `npm start`. Set persistent random values for `APP_SECRET` and `SESSION_SECRET`, and a strong `ADMIN_PASSWORD` for the first boot. The application hashes this bootstrap password into `data/.auth/admin.json`; later changes are made under `/manage/settings` and persist independently of `.env`. Once the credential file exists, remove the bootstrap `ADMIN_PASSWORD` from `.env` so an old password cannot become a fallback if the credential file is lost. The production server listens on `127.0.0.1:3000` unless `HOST`/`PORT` are set. For local development run `npm run dev:server` and `npm run dev:client` in separate terminals; Vite is at `http://localhost:5173` and proxies `/api` to the Express server on port 3000. The development-only default login is `admin` / `ChangeMe123!`; override it via `.env` for any shared environment.
 
 ## Routes
 
-| Path                                           | Purpose                                    |
-| ---------------------------------------------- | ------------------------------------------ |
-| `/`                                            | Public homepage                            |
-| `/products`, `/products/:slug`                 | Catalog, comparison, product detail        |
-| `/recommend`                                   | Product recommendation wizard              |
-| `/contact`                                     | Callback request                           |
-| `/backend/login`                               | Admin login                                |
-| `/backend`                                     | Dashboard                                  |
-| `/backend/customers`, `/backend/customers/:id` | Customer CRUD and 360 view                 |
-| `/backend/products`, `/backend/policies`       | Product and policy CRUD                    |
-| `/backend/renewals`, `/backend/campaigns`      | Renewal and campaign management            |
-| `/backend/inquiries`, `/backend/audit`         | Inquiries and audit                        |
-| `/backend/genesys`, `/backend/genesys/regions` | Genesys integration and region management  |
-| `/backend/genesys/scheduler`                   | Genesys campaign Auto Sync task management |
-| `/backend/settings`                            | Password change, backup, and demo reset    |
+| Path                                         | Purpose                                     |
+| -------------------------------------------- | ------------------------------------------- |
+| `/`                                          | Public homepage                             |
+| `/products`, `/products/:slug`               | Catalog, comparison, product detail         |
+| `/recommend`                                 | Product recommendation wizard               |
+| `/contact`                                   | Callback request                            |
+| `/manage/login`, `/manage`                   | Insurance management login and dashboard    |
+| `/manage/customers`, `/manage/customers/:id` | Customer CRUD and 360 view                  |
+| `/manage/products`, `/manage/policies`       | Product and policy CRUD                     |
+| `/manage/renewals`, `/manage/campaigns`      | Renewal and campaign management             |
+| `/manage/callbacks`                          | Agent callback schedule                     |
+| `/manage/inquiries`, `/manage/audit`         | Inquiries and audit                         |
+| `/manage/settings`                           | Password change, backup, and demo reset     |
+| `/genesys/login`, `/genesys`                 | Genesys login and integration configuration |
+| `/genesys/import-leads`                      | Campaign preview and Genesys lead import    |
+| `/genesys/regions`, `/genesys/scheduler`     | Region and Auto Sync task management        |
 
 The public website cannot access `/api/admin/*`. Admin APIs use a signed, HTTP-only session cookie, same-origin checks on mutations, a login rate limit, and file-backed sessions. In production the cookie requires HTTPS. Changing the admin password requires the current password and invalidates all existing admin sessions. Client Secret and OAuth tokens are never returned to the browser.
 
@@ -78,17 +79,17 @@ The admin Settings page creates backups under `backups/` before download or demo
 
 ## Genesys Cloud setup
 
-1. Log in to `/backend`, open Genesys Cloud, and choose the region. Singapore (`apse1`) is the default. Region URLs can be edited, tested, reset, and custom regions added from the Regions tab.
+1. Log in to `/genesys` and choose the region. Singapore (`apse1`) is the default. Region URLs can be edited, tested, reset, and custom regions added from the Regions tab.
 2. Enter the OAuth Client ID and Client Secret for a Client Credentials integration, then save. The secret is encrypted at rest with `APP_SECRET` (AES-256-GCM). Test Connection checks OAuth and the outbound Contact Lists API. The OAuth client needs the Genesys outbound Contact List and Contact permissions required by the operations it will perform.
 3. Load Contact Lists, select one, and save. Set `phoneColumn` to the Genesys phone column (default `phone`). Validate Schema. The target list must have all 23 canonical columns with exact case and the phone column configured as a phone column; extra columns are reported but do not block sync.
-4. Preview a campaign or renewal group. DNC customers, invalid/duplicate phones, and unchanged contacts are excluded. Export a UTF-8 BOM/CRLF CSV, or confirm Sync to Genesys. The UI sends controlled batches and displays progress and failed IDs. Individual policies can be pushed from Policy Detail.
+4. Open Import Lead Contact, choose a saved campaign, and select Preview. DNC customers, invalid/duplicate phones, and unchanged contacts are excluded. Load Lead sends every eligible contact to Genesys in controlled batches and displays progress and failed IDs. Individual policies can also be pushed from Policy Detail.
 5. Open Scheduler to create one or more Auto Sync tasks. Each task selects a saved source campaign and can run once, daily, or weekly in the `Asia/Bangkok` time zone. Tasks can be enabled, paused, edited, run immediately, or deleted. Every run re-evaluates the campaign so it uses the latest eligible contacts and records its last result. A campaign cannot be deleted while a scheduler task uses it.
 
 The server builds one canonical contact record for CSV and API. It sends `POST /api/v2/outbound/contactlists/{id}/contacts` only when there is no existing contact. For an existing changed contact it does GET, merges MFEC data into the complete Genesys contact, and PUTs it. It stores the Genesys Contact ID and a SHA-256 payload hash, and marks locally changed records `OUTDATED`. Network retries are limited to read/update operations; POST is not automatically retried to avoid duplicates after an ambiguous response.
 
 ## Production deployment
 
-The intended domain is `https://tiscodemo.bsmrpa.com`: public pages live at `/`, and all management pages live under `/backend`. The application is deployed to `/app/tiscoinsure` on the Ubuntu host. DNS must point to the server, TCP 80/443 must be open, and port 3000 must remain private. Nginx terminates TLS and proxies to `127.0.0.1:3000`. Use [production.conf](deploy/nginx/production.conf) after obtaining a Let's Encrypt certificate. [bootstrap.conf](deploy/nginx/bootstrap.conf) supports the first HTTP/certificate bootstrap. The [renewal hook](deploy/letsencrypt/reload-nginx.sh) reloads Nginx after certificate renewal. The public site is intentionally unauthenticated; **do not enable global HTTP Basic Auth**.
+The intended domain is `https://tiscodemo.bsmrpa.com`: public pages live at `/`, insurance management lives under `/manage`, and Genesys operations live under `/genesys`. The application is deployed to `/app/tiscoinsure` on the Ubuntu host. DNS must point to the server, TCP 80/443 must be open, and port 3000 must remain private. Nginx terminates TLS and proxies to `127.0.0.1:3000`. Use [production.conf](deploy/nginx/production.conf) after obtaining a Let's Encrypt certificate. [bootstrap.conf](deploy/nginx/bootstrap.conf) supports the first HTTP/certificate bootstrap. The [renewal hook](deploy/letsencrypt/reload-nginx.sh) reloads Nginx after certificate renewal. The public site is intentionally unauthenticated; **do not enable global HTTP Basic Auth**.
 
 Example initial Ubuntu setup (replace email and secrets, run from a privileged account):
 
@@ -120,7 +121,7 @@ Verify after deployment:
 
 ```bash
 curl -I https://tiscodemo.bsmrpa.com/
-curl -I https://tiscodemo.bsmrpa.com/backend/login
+curl -I https://tiscodemo.bsmrpa.com/manage/login
 curl https://tiscodemo.bsmrpa.com/api/health
 curl -i https://tiscodemo.bsmrpa.com/api/admin/customers
 ```

@@ -7,7 +7,6 @@ import {
   Pencil,
   Play,
   Plus,
-  Search,
   RefreshCcw,
   Save,
   Trash2,
@@ -23,8 +22,9 @@ import type {
   RegionResponse,
 } from "./lib/api";
 import { api } from "./lib/api";
+import { GenesysImportLeads } from "./GenesysImportLeads";
 
-type Tab = "integration" | "regions" | "scheduler";
+type Tab = "integration" | "import-leads" | "regions" | "scheduler";
 type EditorMode = "edit" | "create";
 type ContactList = {
   id: string;
@@ -67,30 +67,6 @@ type ScheduleDraft = Pick<
   | "dayOfWeek"
   | "enabled"
 >;
-type ContactPreview = {
-  rows: {
-    contact: {
-      firstName: string;
-      lastName: string;
-      phone: string;
-      policyNumber: string;
-      productName: string;
-    };
-    eligibility: string;
-  }[];
-  summary: {
-    matched: number;
-    eligible: number;
-    dncExcluded: number;
-    invalidPhone: number;
-    duplicatePhone: number;
-    alreadySynced: number;
-  };
-};
-type ContactReview = { target: ContactList; preview: ContactPreview };
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 function contactListIdFromInput(value: string): string {
   const match = value.match(
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
@@ -149,10 +125,6 @@ export function App({ tab = "integration" }: { tab?: Tab }) {
   const [error, setError] = useState("");
   const [contactLists, setContactLists] = useState<ContactList[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [campaignId, setCampaignId] = useState("");
-  const [contactReview, setContactReview] = useState<ContactReview | null>(
-    null,
-  );
   const [schemaResult, setSchemaResult] = useState<SchemaResult | null>(null);
 
   async function loadAll() {
@@ -179,10 +151,11 @@ export function App({ tab = "integration" }: { tab?: Tab }) {
 
   useEffect(() => {
     void loadAll();
-    void api<{ items: Campaign[] }>("/api/admin/campaigns")
-      .then((result) => setCampaigns(result.items))
-      .catch(() => setError("Unable to load source campaigns."));
-  }, []);
+    if (tab === "scheduler")
+      void api<{ items: Campaign[] }>("/api/admin/campaigns")
+        .then((result) => setCampaigns(result.items))
+        .catch(() => setError("Unable to load source campaigns."));
+  }, [tab]);
 
   const activeRegionPreview = useMemo(() => {
     const draftRegionId =
@@ -355,33 +328,6 @@ export function App({ tab = "integration" }: { tab?: Tab }) {
     });
   }
 
-  async function reviewContacts() {
-    await run("review-contacts", async () => {
-      const id = contactListIdFromInput(configDraft.contactListId ?? "");
-      if (!UUID_PATTERN.test(id)) {
-        throw new Error(
-          "Enter a Genesys Contact List UUID or select a list first.",
-        );
-      }
-      const previewPath = campaignId
-        ? `/api/admin/campaigns/${encodeURIComponent(campaignId)}/preview`
-        : "/api/admin/campaigns/preview";
-      const [target, preview] = await Promise.all([
-        api<ContactList>(`/api/admin/genesys/contact-lists/${id}`),
-        api<ContactPreview>(previewPath, {
-          method: "POST",
-          body: JSON.stringify({ filters: {} }),
-        }),
-      ]);
-      setContactReview({ target, preview });
-      setConfigDraft((draft) =>
-        contactListIdFromInput(draft.contactListId ?? "") === id
-          ? { ...draft, contactListId: id, contactListName: target.name }
-          : draft,
-      );
-    });
-  }
-
   async function run(label: string, action: () => Promise<void>) {
     setBusy(label);
     setError("");
@@ -420,9 +366,11 @@ export function App({ tab = "integration" }: { tab?: Tab }) {
           <h1>
             {tab === "regions"
               ? "Region management"
-              : tab === "scheduler"
-                ? "Auto Sync Scheduler"
-                : "Integration settings"}
+              : tab === "import-leads"
+                ? "Import Lead Contact"
+                : tab === "scheduler"
+                  ? "Auto Sync Scheduler"
+                  : "Integration settings"}
           </h1>
         </div>
         <StatusPill status={configResponse.config.lastConnectionStatus} />
@@ -596,7 +544,6 @@ export function App({ tab = "integration" }: { tab?: Tab }) {
                       contactListName: item?.name || "",
                     });
                     setSchemaResult(null);
-                    setContactReview(null);
                   }}
                 >
                   <option value="">Select contact list</option>
@@ -632,7 +579,6 @@ export function App({ tab = "integration" }: { tab?: Tab }) {
                           : "",
                     });
                     setSchemaResult(null);
-                    setContactReview(null);
                   }}
                 />
                 <small className="muted">
@@ -653,113 +599,6 @@ export function App({ tab = "integration" }: { tab?: Tab }) {
                 />
               </label>
             </div>
-          </section>
-
-          <section className="settings-panel">
-            <SectionTitle title="Review Contact List" />
-            <div className="field-grid">
-              <label>
-                <span>Source campaign</span>
-                <select
-                  value={campaignId}
-                  onChange={(event) => {
-                    setCampaignId(event.target.value);
-                    setContactReview(null);
-                  }}
-                >
-                  <option value="">All policies</option>
-                  {campaigns.map((campaign) => (
-                    <option
-                      key={campaign.campaignListId}
-                      value={campaign.campaignListId}
-                    >
-                      {campaign.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="button-row">
-              <button
-                type="button"
-                className="secondary"
-                onClick={reviewContacts}
-                disabled={Boolean(busy)}
-              >
-                <Search size={16} />
-                Review target and contacts
-              </button>
-            </div>
-            {contactReview && (
-              <div className="contact-review">
-                <div className="review-target">
-                  <strong>Genesys destination</strong>
-                  <span>{contactReview.target.name}</span>
-                  <code>{contactReview.target.id}</code>
-                  <small>
-                    Columns:{" "}
-                    {contactReview.target.columnNames?.join(", ") ||
-                      "None reported"}
-                  </small>
-                </div>
-                <div className="review-counts">
-                  <SummaryItem
-                    label="Matched"
-                    value={String(contactReview.preview.summary.matched)}
-                  />
-                  <SummaryItem
-                    label="Eligible"
-                    value={String(contactReview.preview.summary.eligible)}
-                  />
-                  <SummaryItem
-                    label="DNC"
-                    value={String(contactReview.preview.summary.dncExcluded)}
-                  />
-                  <SummaryItem
-                    label="Invalid phone"
-                    value={String(contactReview.preview.summary.invalidPhone)}
-                  />
-                  <SummaryItem
-                    label="Duplicate"
-                    value={String(contactReview.preview.summary.duplicatePhone)}
-                  />
-                  <SummaryItem
-                    label="Already synced"
-                    value={String(contactReview.preview.summary.alreadySynced)}
-                  />
-                </div>
-                <p className="muted">
-                  Only Eligible contacts are selected for sync. Review does not
-                  send data to Genesys.
-                </p>
-                <div className="review-table-wrap">
-                  <table className="review-table">
-                    <thead>
-                      <tr>
-                        <th>Customer</th>
-                        <th>Phone</th>
-                        <th>Policy</th>
-                        <th>Product</th>
-                        <th>Eligibility</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {contactReview.preview.rows.map((row, index) => (
-                        <tr key={`${row.contact.policyNumber}-${index}`}>
-                          <td>
-                            {row.contact.firstName} {row.contact.lastName}
-                          </td>
-                          <td>{row.contact.phone}</td>
-                          <td>{row.contact.policyNumber}</td>
-                          <td>{row.contact.productName}</td>
-                          <td>{row.eligibility.replaceAll("_", " ")}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
           </section>
 
           <section className="settings-panel">
@@ -852,6 +691,8 @@ export function App({ tab = "integration" }: { tab?: Tab }) {
             </div>
           </section>
         </form>
+      ) : tab === "import-leads" ? (
+        <GenesysImportLeads config={configResponse.config} />
       ) : tab === "regions" ? (
         <section className="regions-view">
           <div className="table-actions">

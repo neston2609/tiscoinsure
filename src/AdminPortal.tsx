@@ -17,6 +17,7 @@ import {
   Globe2,
   KeyRound,
   LayoutDashboard,
+  ListPlus,
   LogOut,
   Menu,
   Pencil,
@@ -211,6 +212,7 @@ const managementNav = [
 ];
 const genesysNav = [
   { key: "integration", label: "Integration", icon: ShieldCheck },
+  { key: "import-leads", label: "Import Lead Contact", icon: ListPlus },
   { key: "regions", label: "Regions", icon: Globe2 },
   { key: "scheduler", label: "Scheduler", icon: Clock3 },
 ];
@@ -336,7 +338,7 @@ function Login({
         <h1>Sign in</h1>
         <p>
           {genesys
-            ? "Manage Genesys integration, regions, and schedules"
+            ? "Manage Genesys integration, lead imports, regions, and schedules"
             : "Manage customers, policies, and renewals"}
         </p>
         {passwordChanged && (
@@ -388,7 +390,9 @@ function AdminPortal({
   const pathParts = window.location.pathname.split("/");
   const isGenesys = portal === "genesys";
   const key = isGenesys ? "genesys" : pathParts[2] || "dashboard";
-  const genesysSection = ["regions", "scheduler"].includes(pathParts[2])
+  const genesysSection = ["import-leads", "regions", "scheduler"].includes(
+    pathParts[2],
+  )
     ? pathParts[2]
     : "integration";
   const activeNavKey = isGenesys ? genesysSection : key;
@@ -480,11 +484,13 @@ function AdminPortal({
             <ChevronRight size={14} />{" "}
             <b>
               {isGenesys
-                ? genesysSection === "regions"
-                  ? "Regions"
-                  : genesysSection === "scheduler"
-                    ? "Scheduler"
-                    : "Integration"
+                ? genesysSection === "import-leads"
+                  ? "Import Lead Contact"
+                  : genesysSection === "regions"
+                    ? "Regions"
+                    : genesysSection === "scheduler"
+                      ? "Scheduler"
+                      : "Integration"
                 : titleFor[key] || "Management"}
             </b>
           </div>
@@ -535,7 +541,10 @@ function AdminPortal({
         <main className="admin-content">
           {isGenesys ? (
             <GenesysSettings
-              tab={genesysSection as "integration" | "regions" | "scheduler"}
+              tab={
+                genesysSection as
+                  "integration" | "import-leads" | "regions" | "scheduler"
+              }
             />
           ) : key === "dashboard" ? (
             <Dashboard />
