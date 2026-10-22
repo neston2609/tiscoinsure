@@ -156,6 +156,16 @@ const agentCallbackUpdate = z.object({
   notes: z.string().trim().max(1000).optional(),
   outcomeNotes: z.string().trim().max(2000).optional(),
 });
+const publicAgentCallbackInput = z
+  .object({
+    policyNumber: z.string().trim().min(1).max(80),
+    scheduledAt: z.string().datetime({ offset: true }),
+    intent: z.enum(AGENT_CALLBACK_INTENTS),
+    priority: z.enum(AGENT_CALLBACK_PRIORITIES).default("NORMAL"),
+    assignedAgent: z.string().trim().max(120).default(""),
+    notes: z.string().trim().max(1000).default(""),
+  })
+  .strict();
 
 export async function createCustomer(
   input: unknown,
@@ -457,6 +467,40 @@ export async function createAgentCallback(
     intent: item.intent,
   });
   return item;
+}
+
+export async function createAgentCallbackByPolicyNumber(
+  input: unknown,
+  actor: string,
+) {
+  const data = publicAgentCallbackInput.parse(input);
+  const policy = (await policies.all()).find(
+    (item) => item.policyNumber === data.policyNumber,
+  );
+  if (!policy) throw httpError(404, "Policy not found");
+
+  const callback = await createAgentCallback(
+    {
+      policyId: policy.policyId,
+      scheduledAt: new Date(data.scheduledAt).toISOString(),
+      intent: data.intent,
+      priority: data.priority,
+      assignedAgent: data.assignedAgent || "Unassigned",
+      notes: data.notes,
+    },
+    actor,
+  );
+  return {
+    callbackId: callback.callbackId,
+    policyNumber: policy.policyNumber,
+    scheduledAt: callback.scheduledAt,
+    status: callback.status,
+    priority: callback.priority,
+    intent: callback.intent,
+    assignedAgent: callback.assignedAgent,
+    notes: callback.notes,
+    createdAt: callback.createdAt,
+  };
 }
 
 export async function updateAgentCallback(

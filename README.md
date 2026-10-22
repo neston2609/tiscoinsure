@@ -49,6 +49,27 @@ The response contains the policy number, new effective and expiry dates, `renewa
 
 **Security:** This unauthenticated endpoint can change demo policy records for anyone who knows a policy number. Do not use it for real insurance data without adding an authorization mechanism or upstream access control.
 
+### Public Agent Call Back API
+
+`POST /api/public/agent-callbacks` creates a scheduled Agent Call Back from a policy number and does not require authentication:
+
+```bash
+curl -X POST https://tiscodemo.bsmrpa.com/api/public/agent-callbacks \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "policyNumber": "MFEC-MC-2026-00001",
+    "scheduledAt": "2026-11-15T10:30:00+07:00",
+    "intent": "RENEWAL_INTERESTED",
+    "priority": "HIGH",
+    "assignedAgent": "Agent Name",
+    "notes": "Customer requested a morning callback"
+  }'
+```
+
+Required fields are `policyNumber`, an ISO 8601 future date/time in `scheduledAt`, and `intent`. Supported intents are `RENEWAL_INTERESTED`, `PREMIUM_INQUIRY`, `DISCOUNT_NEGOTIATION`, `COVERAGE_INQUIRY`, `PLAN_COMPARISON`, `PAYMENT_INQUIRY`, `POLICY_CHANGE`, `COMPLAINT`, `CALLBACK_REQUEST`, and `OTHER`. Optional `priority` accepts `NORMAL`, `HIGH`, or `URGENT` and defaults to `NORMAL`; `assignedAgent` and `notes` are also optional.
+
+The API returns HTTP 201 with the callback ID and saved schedule. It returns 400 for invalid input, DNC customers, or past dates; 404 when the policy number does not exist; and 409 when the policy is renewed/cancelled or already has an active callback. The route is limited to 60 requests per hour per IP.
+
 ## Data and backups
 
 All business records live in `data/*.json`. On first boot the app seeds 30 customers, 10 products, 40 policies, 5 inquiries, and 6 campaigns. `CUST00001` and `POL00001` are the sample customer/policy. JSON writes are serialized per file and atomic. `data/config/*.json` holds Genesys regions and encrypted configuration; `data/.auth/admin.json` holds the salted admin password hash; `data/.sessions/` stores sessions. None of these generated files should be committed.

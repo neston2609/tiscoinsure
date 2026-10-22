@@ -198,6 +198,72 @@ test(
         "/api/admin/policies/POL00001",
       );
       assert.equal(sample.policyNumber, "MFEC-MC-2026-00001");
+      const publicCallbackPolicy = await get<{ policyNumber: string }>(
+        "/api/admin/policies/POL00004",
+      );
+      const publicCallbackResponse = await request(
+        "/api/public/agent-callbacks",
+        "POST",
+        {
+          policyNumber: publicCallbackPolicy.policyNumber,
+          scheduledAt: "2099-12-30T10:00:00+07:00",
+          intent: "CALLBACK_REQUEST",
+          priority: "URGENT",
+          assignedAgent: "External Agent",
+          notes: "Created through the public callback API.",
+        },
+      );
+      assert.equal(
+        publicCallbackResponse.status,
+        201,
+        await publicCallbackResponse.clone().text(),
+      );
+      const publicCallback = (await publicCallbackResponse.json()) as {
+        callbackId: string;
+        policyNumber: string;
+        scheduledAt: string;
+        status: string;
+        priority: string;
+        intent: string;
+        assignedAgent: string;
+        notes: string;
+        createdAt: string;
+      };
+      assert.match(publicCallback.callbackId, /^CALL\d{5}$/);
+      assert.equal(
+        publicCallback.policyNumber,
+        publicCallbackPolicy.policyNumber,
+      );
+      assert.equal(publicCallback.scheduledAt, "2099-12-30T03:00:00.000Z");
+      assert.equal(publicCallback.status, "SCHEDULED");
+      assert.equal(publicCallback.priority, "URGENT");
+      assert.equal(publicCallback.intent, "CALLBACK_REQUEST");
+      assert.equal(publicCallback.assignedAgent, "External Agent");
+      assert.equal(
+        publicCallback.notes,
+        "Created through the public callback API.",
+      );
+      assert.ok(Date.parse(publicCallback.createdAt));
+      assert.equal(
+        (
+          await request("/api/public/agent-callbacks", "POST", {
+            policyNumber: publicCallbackPolicy.policyNumber,
+            scheduledAt: "2099-12-31T10:00:00+07:00",
+            intent: "OTHER",
+          })
+        ).status,
+        409,
+      );
+      assert.equal(
+        (
+          await request("/api/public/agent-callbacks", "POST", {
+            policyNumber: publicCallbackPolicy.policyNumber,
+            scheduledAt: "2099-12-31T10:00:00+07:00",
+            intent: "INVALID_INTENT",
+          })
+        ).status,
+        400,
+      );
       const callbackOptions = await get<{
         items: { policy: { policyId: string } }[];
       }>("/api/admin/agent-callbacks/options");
