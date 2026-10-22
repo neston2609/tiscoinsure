@@ -179,6 +179,7 @@ export function buildPreview(
   allProducts: Product[],
   filters: CampaignFilters = {},
   selectedIds?: string[],
+  contactListId?: string,
 ): { rows: CampaignPreviewRow[]; summary: Record<string, number> } {
   const customerById = new Map(
     allCustomers.map((item) => [item.customerId, item]),
@@ -207,7 +208,8 @@ export function buildPreview(
     else if (seenPhones.has(contact.phone)) eligibility = "DUPLICATE_PHONE";
     else if (
       policy.genesys.syncStatus === "SYNCED" &&
-      policy.genesys.lastPayloadHash === payloadHash(contact)
+      policy.genesys.lastPayloadHash === payloadHash(contact) &&
+      (!contactListId || policy.genesys.contactListId === contactListId)
     )
       eligibility = "ALREADY_SYNCED";
     if (eligibility !== "DNC" && eligibility !== "INVALID_PHONE")

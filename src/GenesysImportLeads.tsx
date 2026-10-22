@@ -1,9 +1,12 @@
 import {
+  CircleAlert,
   CheckCircle2,
   CloudUpload,
+  Database,
   Loader2,
   RefreshCcw,
   Search,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -48,6 +51,13 @@ type ContactPreview = {
 
 type SyncResult = { policyId: string; status: string; message: string };
 
+type ContactList = {
+  id: string;
+  name: string;
+  columnNames?: string[];
+  phoneColumns?: { columnName: string; type?: string }[];
+};
+
 const dateTime = (value?: string) =>
   value
     ? new Date(value).toLocaleString("en-GB", {
@@ -57,11 +67,20 @@ const dateTime = (value?: string) =>
     : "Never";
 
 export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
+  const [activeConfig, setActiveConfig] = useState(config);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [contactLists, setContactLists] = useState<ContactList[]>([]);
+  const [targetListId, setTargetListId] = useState(config.contactListId);
   const [selectedId, setSelectedId] = useState("");
   const [preview, setPreview] = useState<ContactPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<"" | "preview" | "load">("");
+  const [listBusy, setListBusy] = useState<"" | "lists" | "select" | "clear">(
+    "",
+  );
+  const [includeSynced, setIncludeSynced] = useState(false);
+  const [clearConfirmation, setClearConfirmation] = useState("");
+  const [clearTarget, setClearTarget] = useState<ContactList | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [progress, setProgress] = useState({ processed: 0, total: 0 });
@@ -70,14 +89,39 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
   const selected = campaigns.find(
     (campaign) => campaign.campaignListId === selectedId,
   );
-  const readyRows = useMemo(
-    () => preview?.rows.filter((row) => row.eligibility === "ELIGIBLE") ?? [],
+  const previewRows = useMemo(
+    () =>
+      preview?.rows.filter((row) =>
+        ["ELIGIBLE", "ALREADY_SYNCED"].includes(row.eligibility),
+      ) ?? [],
     [preview],
   );
+  const loadRows = useMemo(
+    () =>
+      previewRows.filter(
+        (row) =>
+          row.eligibility === "ELIGIBLE" ||
+          (includeSynced && row.eligibility === "ALREADY_SYNCED"),
+      ),
+    [includeSynced, previewRows],
+  );
+  const reimportCount = loadRows.filter(
+    (row) => row.eligibility === "ALREADY_SYNCED",
+  ).length;
+  const selectedList =
+    contactLists.find((list) => list.id === targetListId) ||
+    (targetListId === activeConfig.contactListId && targetListId
+      ? { id: targetListId, name: activeConfig.contactListName || targetListId }
+      : null);
   const integrationReady =
-    config.enabled &&
-    Boolean(config.contactListId) &&
-    config.schemaStatus === "VALID";
+    activeConfig.enabled &&
+    Boolean(activeConfig.contactListId) &&
+    activeConfig.schemaStatus === "VALID";
+
+  useEffect(() => {
+    setActiveConfig(config);
+    setTargetListId(config.contactListId);
+  }, [config]);
 
   async function loadCampaigns(silent = false) {
     if (!silent) setLoading(true);
@@ -101,7 +145,102 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
 
   useEffect(() => {
     void loadCampaigns();
+    if (config.enabled && config.clientId && config.secretConfigured)
+      void loadContactLists(true);
   }, []);
+
+  async function loadContactLists(silent = false) {
+    setListBusy("lists");
+    if (!silent) {
+      setError("");
+      setMessage("");
+    }
+    try {
+      const result = await api<{ entities?: ContactList[] }>(
+        "/api/admin/genesys/load-contact-lists",
+        { method: "POST", body: JSON.stringify({}) },
+      );
+      const lists = result.entities ?? [];
+      setContactLists(lists);
+      setTargetListId((current) =>
+        lists.some((list) => list.id === current)
+          ? current
+          : lists.some((list) => list.id === activeConfig.contactListId)
+            ? activeConfig.contactListId
+            : lists[0]?.id || activeConfig.contactListId,
+      );
+    } catch (reason) {
+      if (!silent)
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load Genesys Contact Lists",
+        );
+    } finally {
+      setListBusy("");
+    }
+  }
+
+  async function selectContactList() {
+    if (!targetListId) return;
+    setListBusy("select");
+    setError("");
+    setMessage("");
+    try {
+      const result = await api<{
+        ok: boolean;
+        config: GenesysConfig;
+        message: string;
+      }>(
+        `/api/admin/genesys/contact-lists/${encodeURIComponent(targetListId)}/select`,
+        { method: "POST", body: JSON.stringify({}) },
+      );
+      setActiveConfig(result.config);
+      if (selectedId) await previewCampaign(selectedId, true);
+      if (result.ok) setMessage(result.message);
+      else setError(result.message);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to select the Contact List",
+      );
+    } finally {
+      setListBusy("");
+    }
+  }
+
+  async function clearContactList() {
+    if (!clearTarget || clearConfirmation !== "CLEAR") return;
+    setListBusy("clear");
+    setError("");
+    setMessage("");
+    try {
+      const result = await api<{
+        message: string;
+        resetPolicies: number;
+      }>(
+        `/api/admin/genesys/contact-lists/${encodeURIComponent(clearTarget.id)}/clear`,
+        {
+          method: "POST",
+          body: JSON.stringify({ confirmation: clearConfirmation }),
+        },
+      );
+      setMessage(result.message);
+      setClearTarget(null);
+      setClearConfirmation("");
+      setIncludeSynced(false);
+      if (selectedId) await previewCampaign(selectedId, true);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to clear the Contact List",
+      );
+    } finally {
+      setListBusy("");
+    }
+  }
 
   function chooseCampaign(id: string) {
     setSelectedId(id);
@@ -109,9 +248,10 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
     setMessage("");
     setError("");
     setFailed([]);
+    setIncludeSynced(false);
   }
 
-  async function previewCampaign(id = selectedId) {
+  async function previewCampaign(id = selectedId, keepMessage = false) {
     if (!id) {
       setError("Select a source campaign first.");
       return;
@@ -119,8 +259,9 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
     setBusy("preview");
     setSelectedId(id);
     setError("");
-    setMessage("");
+    if (!keepMessage) setMessage("");
     setFailed([]);
+    setIncludeSynced(false);
     try {
       const result = await api<ContactPreview>(
         `/api/admin/campaigns/${encodeURIComponent(id)}/preview`,
@@ -135,10 +276,13 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
   }
 
   async function loadLeads() {
-    if (!selected || !readyRows.length || !integrationReady) return;
+    if (!selected || !loadRows.length || !integrationReady) return;
+    const action = reimportCount
+      ? `Load ${loadRows.length - reimportCount} new leads and re-import ${reimportCount} synchronized leads`
+      : `Load ${loadRows.length} leads`;
     if (
       !window.confirm(
-        `Load ${readyRows.length} leads from ${selected.name} into ${config.contactListName || config.contactListId}?`,
+        `${action} from ${selected.name} into ${activeConfig.contactListName || activeConfig.contactListId}?`,
       )
     )
       return;
@@ -147,10 +291,10 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
     setError("");
     setMessage("");
     setFailed([]);
-    setProgress({ processed: 0, total: readyRows.length });
+    setProgress({ processed: 0, total: loadRows.length });
     const results: SyncResult[] = [];
     try {
-      const policyIds = readyRows.map((row) => row.policy.policyId);
+      const policyIds = loadRows.map((row) => row.policy.policyId);
       for (let index = 0; index < policyIds.length; index += 5) {
         const batch = policyIds.slice(index, index + 5);
         const response = await api<{ results: SyncResult[] }>(
@@ -160,6 +304,7 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
             body: JSON.stringify({
               policyIds: batch,
               campaignListId: selected.campaignListId,
+              force: reimportCount > 0,
             }),
           },
         );
@@ -180,6 +325,7 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
         { method: "POST", body: JSON.stringify({}) },
       );
       setPreview(refreshed);
+      setIncludeSynced(false);
       await loadCampaigns(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Lead import failed");
@@ -209,10 +355,102 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
         </div>
       )}
 
+      <section className="settings-panel lead-destination-panel">
+        <div className="lead-panel-head">
+          <div>
+            <h2>Genesys destination</h2>
+            <p className="muted">
+              Select the Contact List used for lead loading and re-imports.
+            </p>
+          </div>
+          <button
+            className="secondary"
+            onClick={() => loadContactLists()}
+            disabled={Boolean(listBusy) || Boolean(busy)}
+          >
+            {listBusy === "lists" ? (
+              <Loader2 className="spin" size={16} />
+            ) : (
+              <RefreshCcw size={16} />
+            )}
+            Refresh Lists
+          </button>
+        </div>
+        <div className="lead-destination-controls">
+          <label>
+            <span>Genesys Contact List</span>
+            <select
+              value={targetListId}
+              onChange={(event) => setTargetListId(event.target.value)}
+              disabled={Boolean(listBusy) || Boolean(busy)}
+            >
+              <option value="">Select a Contact List</option>
+              {activeConfig.contactListId &&
+                !contactLists.some(
+                  (list) => list.id === activeConfig.contactListId,
+                ) && (
+                  <option value={activeConfig.contactListId}>
+                    {activeConfig.contactListName || activeConfig.contactListId}
+                  </option>
+                )}
+              {contactLists.map((list) => (
+                <option key={list.id} value={list.id}>
+                  {list.name}
+                  {list.id === activeConfig.contactListId ? " (Active)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="lead-destination-detail">
+            <Database size={18} />
+            <div>
+              <span>Active destination</span>
+              <strong>
+                {activeConfig.contactListName || "Not configured"}
+              </strong>
+              <small>{activeConfig.contactListId || "No list selected"}</small>
+            </div>
+          </div>
+          <div className="lead-destination-actions">
+            <button
+              className="primary"
+              onClick={selectContactList}
+              disabled={
+                !targetListId ||
+                Boolean(listBusy) ||
+                Boolean(busy) ||
+                (targetListId === activeConfig.contactListId &&
+                  activeConfig.schemaStatus === "VALID")
+              }
+            >
+              {listBusy === "select" ? (
+                <Loader2 className="spin" size={16} />
+              ) : (
+                <CheckCircle2 size={16} />
+              )}
+              {targetListId === activeConfig.contactListId
+                ? "Validate Destination"
+                : "Use as Destination"}
+            </button>
+            <button
+              className="admin-danger"
+              onClick={() => {
+                if (!selectedList) return;
+                setClearTarget(selectedList);
+                setClearConfirmation("");
+              }}
+              disabled={!selectedList || Boolean(listBusy) || Boolean(busy)}
+            >
+              <Trash2 size={16} /> Clear Selected List
+            </button>
+          </div>
+        </div>
+      </section>
+
       <section className="summary-band lead-import-summary">
         <div>
           <span>Destination list</span>
-          <strong>{config.contactListName || "Not configured"}</strong>
+          <strong>{activeConfig.contactListName || "Not configured"}</strong>
         </div>
         <div>
           <span>Campaigns</span>
@@ -326,23 +564,40 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
         <section className="settings-panel lead-preview-panel">
           <div className="lead-panel-head">
             <div>
-              <h2>Ready contacts</h2>
+              <h2>Preview contacts</h2>
               <p className="muted">{selected.name}</p>
             </div>
-            <button
-              className="primary"
-              onClick={loadLeads}
-              disabled={
-                busy === "load" || !readyRows.length || !integrationReady
-              }
-            >
-              {busy === "load" ? (
-                <Loader2 className="spin" size={16} />
-              ) : (
-                <CloudUpload size={16} />
-              )}
-              Load Lead ({readyRows.length})
-            </button>
+            <div className="lead-preview-actions">
+              <label className="lead-reimport-toggle">
+                <input
+                  type="checkbox"
+                  checked={includeSynced}
+                  onChange={(event) => setIncludeSynced(event.target.checked)}
+                  disabled={!preview.summary.alreadySynced || Boolean(busy)}
+                />
+                <span>
+                  Include already synced leads
+                  <small>
+                    Re-import {preview.summary.alreadySynced} contact(s)
+                  </small>
+                </span>
+              </label>
+              <button
+                className="primary"
+                onClick={loadLeads}
+                disabled={
+                  busy === "load" || !loadRows.length || !integrationReady
+                }
+              >
+                {busy === "load" ? (
+                  <Loader2 className="spin" size={16} />
+                ) : (
+                  <CloudUpload size={16} />
+                )}
+                {reimportCount ? "Load / Re-import" : "Load Lead"} (
+                {loadRows.length})
+              </button>
+            </div>
           </div>
 
           <div className="review-counts lead-preview-counts">
@@ -395,7 +650,7 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
             </div>
           )}
 
-          {readyRows.length ? (
+          {previewRows.length ? (
             <div className="lead-table-wrap lead-contact-table-wrap">
               <table className="lead-contact-table">
                 <thead>
@@ -407,11 +662,19 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
                     <th>Expiry date</th>
                     <th>Days left</th>
                     <th>Renewal status</th>
+                    <th>Import action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {readyRows.map((row) => (
-                    <tr key={row.policy.policyId}>
+                  {previewRows.map((row) => (
+                    <tr
+                      key={row.policy.policyId}
+                      className={
+                        row.eligibility === "ALREADY_SYNCED"
+                          ? "lead-row-synced"
+                          : ""
+                      }
+                    >
                       <td>
                         {row.contact.firstName} {row.contact.lastName}
                       </td>
@@ -425,6 +688,21 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
                           {row.contact.renewalStatus.replaceAll("_", " ")}
                         </span>
                       </td>
+                      <td>
+                        <span
+                          className={`lead-status ${
+                            row.eligibility === "ALREADY_SYNCED"
+                              ? "lead-status-reimport"
+                              : "lead-status-ready"
+                          }`}
+                        >
+                          {row.eligibility === "ALREADY_SYNCED"
+                            ? includeSynced
+                              ? "Re-import selected"
+                              : "Re-import available"
+                            : "Ready"}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -435,12 +713,96 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
               <CheckCircle2 size={25} />
               <strong>No contacts are waiting to load</strong>
               <span>
-                Matched contacts are excluded when they are DNC, invalid,
-                duplicated, or already synchronized.
+                Matched contacts are excluded when they are DNC, invalid, or
+                duplicated.
               </span>
             </div>
           )}
         </section>
+      )}
+
+      {clearTarget && (
+        <div className="admin-modal-backdrop" role="presentation">
+          <div
+            className="admin-modal clear-contact-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clear-contact-title"
+          >
+            <div className="admin-modal-head">
+              <h2 id="clear-contact-title">Clear Genesys Contact List</h2>
+              <button
+                className="icon-button"
+                onClick={() => setClearTarget(null)}
+                aria-label="Close"
+                disabled={listBusy === "clear"}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="clear-contact-body">
+              <div className="clear-contact-warning">
+                <CircleAlert size={22} />
+                <div>
+                  <strong>
+                    This action permanently removes every contact.
+                  </strong>
+                  <p>
+                    Genesys will also cancel outstanding recalls and
+                    rule-scheduled callbacks for non-preview campaigns using
+                    this list.
+                  </p>
+                </div>
+              </div>
+              <dl>
+                <div>
+                  <dt>Contact List</dt>
+                  <dd>{clearTarget.name}</dd>
+                </div>
+                <div>
+                  <dt>List ID</dt>
+                  <dd>{clearTarget.id}</dd>
+                </div>
+              </dl>
+              <label className="clear-contact-confirmation">
+                <span>
+                  Type <strong>CLEAR</strong> to confirm
+                </span>
+                <input
+                  value={clearConfirmation}
+                  onChange={(event) =>
+                    setClearConfirmation(event.target.value.toUpperCase())
+                  }
+                  autoFocus
+                  autoComplete="off"
+                />
+              </label>
+              <div className="clear-contact-actions">
+                <button
+                  className="secondary"
+                  onClick={() => setClearTarget(null)}
+                  disabled={listBusy === "clear"}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="admin-danger"
+                  onClick={clearContactList}
+                  disabled={
+                    clearConfirmation !== "CLEAR" || listBusy === "clear"
+                  }
+                >
+                  {listBusy === "clear" ? (
+                    <Loader2 className="spin" size={16} />
+                  ) : (
+                    <Trash2 size={16} />
+                  )}
+                  Clear All Contacts
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

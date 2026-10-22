@@ -44,6 +44,7 @@ export type SchemaResult = {
 };
 const configService = new GenesysConfigService();
 const inFlight = new Set<string>();
+const clearingLists = new Set<string>();
 
 type SyncOptions = {
   force?: boolean;
@@ -429,6 +430,7 @@ export async function bulkSyncPolicies(
   policyIds: string[],
   actor: string,
   campaignListId?: string,
+  force = false,
 ) {
   if (
     !Array.isArray(policyIds) ||
@@ -443,7 +445,7 @@ export async function bulkSyncPolicies(
   const results: Awaited<ReturnType<typeof syncPolicy>>[] = [];
   for (const policyId of unique) {
     try {
-      results.push(await syncPolicy(policyId, actor, schema));
+      results.push(await syncPolicy(policyId, actor, schema, { force }));
     } catch (error) {
       results.push({
         policyId,
@@ -469,6 +471,71 @@ export async function bulkSyncPolicies(
     processed: results.length,
     successful,
     failed,
+    force,
   });
   return { processed: results.length, successful, failed, results };
+}
+
+export async function clearGenesysContactList(
+  contactListId: string,
+  actor: string,
+): Promise<{
+  contactListId: string;
+  contactListName: string;
+  resetPolicies: number;
+  message: string;
+}> {
+  if (clearingLists.has(contactListId))
+    throw httpError(409, "This Genesys Contact List is already being cleared");
+  if (inFlight.size)
+    throw httpError(
+      409,
+      "Wait for active Genesys lead imports to finish first",
+    );
+
+  clearingLists.add(contactListId);
+  try {
+    const config = await configService.getConfig();
+    if (!config.enabled)
+      throw httpError(400, "Genesys integration is disabled");
+
+    const list = await genesysApiClient.get<ContactListSchema>(
+      `/api/v2/outbound/contactlists/${encodeURIComponent(contactListId)}`,
+    );
+    await genesysApiClient.post<void>(
+      `/api/v2/outbound/contactlists/${encodeURIComponent(contactListId)}/clear`,
+      undefined,
+    );
+
+    const resetPolicies = await policies.mutate((rows) => {
+      let reset = 0;
+      for (const policy of rows) {
+        if (policy.genesys.contactListId !== contactListId) continue;
+        policy.genesys = {
+          contactListId: "",
+          contactId: "",
+          syncStatus: "NOT_SYNCED",
+          lastSyncAt: "",
+          lastSyncError: null,
+          lastPayloadHash: "",
+          lastSyncedBy: "",
+        };
+        reset++;
+      }
+      return reset;
+    });
+    const contactListName = list.name || contactListId;
+    await audit("CLEAR_GENESYS_CONTACT_LIST", actor, contactListId, {
+      contactListName,
+      resetPolicies,
+    });
+    return {
+      contactListId,
+      contactListName,
+      resetPolicies,
+      message: `${contactListName} was cleared. ${resetPolicies} local policy records are ready to import again.`,
+    };
+  } finally {
+    clearingLists.delete(contactListId);
+  }
 }

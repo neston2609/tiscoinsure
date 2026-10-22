@@ -16,9 +16,11 @@ import {
 } from "../domain/store";
 import type { CampaignFilters, CampaignList } from "../domain/types";
 import { requireAdmin } from "../middleware/require-admin";
+import { GenesysConfigService } from "../services/genesys/genesys-config.service";
 
 export const campaignRouter = Router();
 campaignRouter.use(requireAdmin);
+const genesysConfigService = new GenesysConfigService();
 
 export const filtersSchema = z.object({
   productId: z.string().optional(),
@@ -51,17 +53,20 @@ export async function previewCampaign(
   filters: CampaignFilters,
   selectedIds?: string[],
 ) {
-  const [allPolicies, allCustomers, allProducts] = await Promise.all([
-    policies.all(),
-    customers.all(),
-    products.all(),
-  ]);
+  const [allPolicies, allCustomers, allProducts, genesysConfig] =
+    await Promise.all([
+      policies.all(),
+      customers.all(),
+      products.all(),
+      genesysConfigService.getConfig(),
+    ]);
   return buildPreview(
     allPolicies,
     allCustomers,
     allProducts,
     filters,
     selectedIds,
+    genesysConfig.contactListId || undefined,
   );
 }
 

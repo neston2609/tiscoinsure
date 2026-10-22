@@ -103,6 +103,43 @@ test("seed includes required sample and DNC is never eligible", () => {
   );
   assert.ok(preview.summary.eligible > 0);
   assert.equal(preview.summary.matched, preview.rows.length);
+
+  const samplePolicy = policies[0];
+  const sampleCustomer = customers.find(
+    (customer) => customer.customerId === samplePolicy.customerId,
+  )!;
+  const sampleProduct = products.find(
+    (product) => product.productId === samplePolicy.productId,
+  )!;
+  samplePolicy.genesys = {
+    contactListId: "list-a",
+    contactId: "contact-a",
+    syncStatus: "SYNCED",
+    lastSyncAt: new Date().toISOString(),
+    lastSyncError: null,
+    lastPayloadHash: payloadHash(
+      mapCampaignContact(samplePolicy, sampleCustomer, sampleProduct),
+    ),
+    lastSyncedBy: "test",
+  };
+  const sameList = buildPreview(
+    policies,
+    customers,
+    products,
+    {},
+    [samplePolicy.policyId],
+    "list-a",
+  );
+  const differentList = buildPreview(
+    policies,
+    customers,
+    products,
+    {},
+    [samplePolicy.policyId],
+    "list-b",
+  );
+  assert.equal(sameList.rows[0]?.eligibility, "ALREADY_SYNCED");
+  assert.equal(differentList.rows[0]?.eligibility, "ELIGIBLE");
 });
 
 test("CSV is BOM/CRLF UTF-8, escaped, and protects formulas", () => {

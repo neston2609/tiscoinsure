@@ -15,6 +15,7 @@ test(
     let posts = 0,
       puts = 0,
       recalls = 0,
+      clears = 0,
       schemaValid = true,
       remoteContactExists = false;
     let lastPut: Record<string, unknown> = {};
@@ -26,7 +27,7 @@ test(
         { GenesysConfigService },
         { encryptSecret },
         { CONTACT_COLUMNS },
-        { recallPolicy, syncPolicy },
+        { bulkSyncPolicies, clearGenesysContactList, recallPolicy, syncPolicy },
       ] = await Promise.all([
         import("../server/domain/store"),
         import("../server/domain/business"),
@@ -62,6 +63,11 @@ test(
               : CONTACT_COLUMNS.filter((column) => column !== "vehicleType"),
             phoneColumns: [{ columnName: "phone", type: "Cell" }],
           });
+        if (url.endsWith("/contactlists/list-1/clear") && method === "POST") {
+          clears++;
+          remoteContactExists = false;
+          return new Response(null, { status: 204 });
+        }
         if (
           url.includes(
             "/contactlists/list-1/contacts?priority=true&clearSystemData=true&doNotQueue=false",
@@ -119,6 +125,14 @@ test(
       assert.match(forced.message, /Demo/);
       assert.match(forced.message, /contact-1/);
       assert.equal(puts, 1);
+      const reimported = await bulkSyncPolicies(
+        ["POL00001"],
+        "test",
+        undefined,
+        true,
+      );
+      assert.equal(reimported.results[0]?.status, "SYNCED");
+      assert.equal(puts, 2);
       const recalled = await recallPolicy("POL00001", "test");
       assert.equal(recalled.status, "RECALLED");
       assert.equal(recalled.verified, true);
@@ -131,7 +145,7 @@ test(
       );
       const third = await syncPolicy("POL00001", "test");
       assert.equal(third.status, "SYNCED");
-      assert.equal(puts, 2);
+      assert.equal(puts, 3);
       assert.equal(posts, 1);
       assert.equal(
         (lastPut.data as Record<string, string>).customField,
@@ -150,6 +164,22 @@ test(
       assert.equal(recreated.contactId, "contact-2");
       assert.equal(recreated.verified, true);
       assert.equal(posts, 2);
+      const cleared = await clearGenesysContactList("list-1", "test");
+      assert.equal(cleared.contactListName, "Demo");
+      assert.ok(cleared.resetPolicies >= 1);
+      assert.equal(clears, 1);
+      assert.deepEqual(
+        (await policies.findById("policyId", "POL00001"))?.genesys,
+        {
+          contactListId: "",
+          contactId: "",
+          syncStatus: "NOT_SYNCED",
+          lastSyncAt: "",
+          lastSyncError: null,
+          lastPayloadHash: "",
+          lastSyncedBy: "",
+        },
+      );
       await updateCustomer("CUST00001", { dnc: true }, "test");
       assert.equal(
         (await syncPolicy("POL00001", "test")).status,
@@ -165,12 +195,12 @@ test(
       );
       assert.equal(recalls, 1);
       assert.equal(posts, 2);
-      assert.equal(puts, 2);
+      assert.equal(puts, 3);
       schemaValid = false;
       const mismatch = await syncPolicy("POL00002", "test");
       assert.equal(mismatch.status, "SCHEMA_MISMATCH");
       assert.equal(posts, 2);
-      assert.equal(puts, 2);
+      assert.equal(puts, 3);
       assert.equal(
         (await customers.findById("customerId", "CUST00001"))?.dnc,
         true,

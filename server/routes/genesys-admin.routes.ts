@@ -7,6 +7,8 @@ import { encryptSecret } from "../services/genesys/secret.service";
 import type { GenesysConfig } from "../services/genesys/types";
 import {
   bulkSyncPolicies,
+  clearGenesysContactList,
+  compareSchema,
   recallPolicy,
   syncPolicy,
   validateContactListSchema,
@@ -313,6 +315,52 @@ genesysAdminRouter.get(
 );
 
 genesysAdminRouter.post(
+  "/contact-lists/:contactListId/select",
+  async (request, response, next) => {
+    try {
+      const id = z.string().uuid().parse(request.params.contactListId);
+      const list = await genesysApiClient.get<{
+        id: string;
+        name: string;
+        columnNames?: string[];
+        phoneColumns?: { columnName: string; type?: string }[];
+      }>(`/api/v2/outbound/contactlists/${id}`);
+      const updated = await configService.updateConfig(
+        { contactListId: id, contactListName: list.name },
+        request.user!.name,
+      );
+      const schema = compareSchema(list, id, updated.phoneColumn);
+      const config = await configService.markSchema(
+        schema.valid ? "VALID" : "INVALID",
+      );
+      response.json({
+        ok: schema.valid,
+        config: serializeConfig(config),
+        schema,
+        message: schema.valid
+          ? `${list.name} is now the active destination list.`
+          : `${list.name} was selected, but its schema must be corrected before importing leads.`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+genesysAdminRouter.post(
+  "/contact-lists/:contactListId/clear",
+  async (request, response, next) => {
+    try {
+      const id = z.string().uuid().parse(request.params.contactListId);
+      z.object({ confirmation: z.literal("CLEAR") }).parse(request.body);
+      response.json(await clearGenesysContactList(id, request.user!.name));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+genesysAdminRouter.post(
   "/validate-schema",
   async (_request, response, next) => {
     try {
@@ -388,6 +436,7 @@ genesysAdminRouter.post("/sync/bulk", async (request, response, next) => {
       .object({
         policyIds: z.array(z.string()).min(1).max(100),
         campaignListId: z.string().optional(),
+        force: z.boolean().optional().default(false),
       })
       .parse(request.body);
     response.json(
@@ -395,6 +444,7 @@ genesysAdminRouter.post("/sync/bulk", async (request, response, next) => {
         body.policyIds,
         request.user!.name,
         body.campaignListId,
+        body.force,
       ),
     );
   } catch (error) {

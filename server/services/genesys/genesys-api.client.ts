@@ -58,7 +58,11 @@ export class GenesysApiClient {
         if (method !== "POST" && attempt < 2) { await delay(250 * (attempt + 1)); continue; }
         throw error;
       }
-      if (response.ok) return response.status === 204 ? null as T : await response.json() as T;
+      if (response.ok) {
+        if (response.status === 204) return null as T;
+        const payload = await response.text();
+        return (payload ? JSON.parse(payload) : null) as T;
+      }
       if (response.status === 401 && !draft && attempt === 0) { tokenCacheService.clear(); continue; }
       if (method !== "POST" && [429, 502, 503, 504].includes(response.status) && attempt < 2) {
         const retryAfter = Number(response.headers.get("Retry-After") || 0);
