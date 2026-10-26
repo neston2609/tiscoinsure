@@ -71,6 +71,22 @@ Required fields are `policyNumber`, an ISO 8601 future date/time in `scheduledAt
 
 The API returns HTTP 201 with the callback ID and saved schedule. It returns 400 for invalid input, DNC customers, or past dates; 404 when the policy number does not exist; and 409 when the policy is renewed/cancelled or already has an active callback. The route is limited to 60 requests per hour per IP.
 
+`POST /api/public/agent-callbacks/status` updates an existing Agent Call Back by the `customerId` and `policyId` pair without authentication. `detail` is saved as the callback outcome, and `agentName` is optional:
+
+```bash
+curl -X POST https://tiscodemo.bsmrpa.com/api/public/agent-callbacks/status \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "customerId": "CUST00001",
+    "policyId": "POL00001",
+    "status": "COMPLETED",
+    "detail": "ลูกค้าให้โทรกลับอีก 15 นาที",
+    "agentName": "Agentic Virtual Agent"
+  }'
+```
+
+Supported statuses are `SCHEDULED`, `COMPLETED`, and `CANCELLED` (case-insensitive). A missing `customerId`/`policyId` pair returns 404. Successful Genesys campaign imports automatically create a `SCHEDULED` Agent Call Back; importing the same customer and policy again updates that record instead of creating another one.
+
 ## Data and backups
 
 All business records live in `data/*.json`. On first boot the app seeds 30 customers, 10 products, 40 policies, 5 inquiries, and 6 campaigns. `CUST00001` and `POL00001` are the sample customer/policy. JSON writes are serialized per file and atomic. `data/config/*.json` holds Genesys regions and encrypted configuration; `data/.auth/admin.json` holds the salted admin password hash; `data/.sessions/` stores sessions. None of these generated files should be committed.

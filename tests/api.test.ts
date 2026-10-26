@@ -198,9 +198,11 @@ test(
         "/api/admin/policies/POL00001",
       );
       assert.equal(sample.policyNumber, "MFEC-MC-2026-00001");
-      const publicCallbackPolicy = await get<{ policyNumber: string }>(
-        "/api/admin/policies/POL00004",
-      );
+      const publicCallbackPolicy = await get<{
+        policyId: string;
+        customerId: string;
+        policyNumber: string;
+      }>("/api/admin/policies/POL00004");
       const publicCallbackResponse = await request(
         "/api/public/agent-callbacks",
         "POST",
@@ -263,6 +265,50 @@ test(
           })
         ).status,
         400,
+      );
+      const publicStatusResponse = await request(
+        "/api/public/agent-callbacks/status",
+        "POST",
+        {
+          customerId: publicCallbackPolicy.customerId,
+          policyId: publicCallbackPolicy.policyId,
+          detail: "ลูกค้าให้โทรกลับอีก 15 นาที",
+          agentName: "Agentic Virtual Agent",
+          status: "completed",
+        },
+      );
+      assert.equal(
+        publicStatusResponse.status,
+        200,
+        await publicStatusResponse.clone().text(),
+      );
+      const publicStatus = (await publicStatusResponse.json()) as {
+        callbackId: string;
+        customerId: string;
+        policyId: string;
+        detail: string;
+        agentName: string;
+        status: string;
+        completedAt: string;
+      };
+      assert.equal(publicStatus.callbackId, publicCallback.callbackId);
+      assert.equal(publicStatus.customerId, publicCallbackPolicy.customerId);
+      assert.equal(publicStatus.policyId, publicCallbackPolicy.policyId);
+      assert.equal(publicStatus.status, "COMPLETED");
+      assert.equal(publicStatus.agentName, "Agentic Virtual Agent");
+      assert.equal(publicStatus.detail, "ลูกค้าให้โทรกลับอีก 15 นาที");
+      assert.ok(Date.parse(publicStatus.completedAt));
+      assert.equal(
+        (
+          await request("/api/public/agent-callbacks/status", "POST", {
+            customerId: "CUST99999",
+            policyId: "POL99999",
+            detail: "Not found",
+            agentName: "Agentic Virtual Agent",
+            status: "COMPLETED",
+          })
+        ).status,
+        404,
       );
       const callbackOptions = await get<{
         items: { policy: { policyId: string } }[];

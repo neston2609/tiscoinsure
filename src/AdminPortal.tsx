@@ -88,6 +88,7 @@ type AgentCallbackDraft = {
   priority: AgentCallback["priority"];
   intent: AgentCallback["intent"];
   assignedAgent: string;
+  agentName: string;
   notes: string;
   outcomeNotes: string;
 };
@@ -3463,6 +3464,7 @@ function AgentCallbacks({ username }: { username: string }) {
       priority: "NORMAL",
       intent: "CALLBACK_REQUEST",
       assignedAgent: username,
+      agentName: "",
       notes: "",
       outcomeNotes: "",
     });
@@ -3479,6 +3481,7 @@ function AgentCallbacks({ username }: { username: string }) {
       priority: item.priority,
       intent: item.intent || "CALLBACK_REQUEST",
       assignedAgent: item.assignedAgent,
+      agentName: item.agentName || "",
       notes: item.notes,
       outcomeNotes: item.outcomeNotes,
     });
@@ -3496,6 +3499,7 @@ function AgentCallbacks({ username }: { username: string }) {
         priority: draft.priority,
         intent: draft.intent,
         assignedAgent: draft.assignedAgent,
+        agentName: draft.agentName,
         notes: draft.notes,
         ...(draft.callbackId
           ? { status: draft.status, outcomeNotes: draft.outcomeNotes }
@@ -3603,7 +3607,7 @@ function AgentCallbacks({ username }: { username: string }) {
         <div className="admin-search">
           <Search size={17} />
           <input
-            placeholder="Customer, phone, policy, or agent"
+            placeholder="Customer, phone, policy, assigned agent, or agent name"
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
@@ -3662,7 +3666,8 @@ function AgentCallbacks({ username }: { username: string }) {
               <th>Expiring policy</th>
               <th>Intent</th>
               <th>Priority</th>
-              <th>Agent</th>
+              <th>Assigned agent</th>
+              <th>Agent name</th>
               <th>Status</th>
               <th>Details</th>
               <th></th>
@@ -3710,6 +3715,7 @@ function AgentCallbacks({ username }: { username: string }) {
                   <Badge value={item.priority} />
                 </td>
                 <td>{item.assignedAgent || "Unassigned"}</td>
+                <td>{item.agentName || "—"}</td>
                 <td>
                   <Badge value={item.status} />
                   {item.overdue && (
@@ -3847,6 +3853,16 @@ function AgentCallbacks({ username }: { username: string }) {
                   value={draft.assignedAgent}
                   onChange={(event) =>
                     setDraft({ ...draft, assignedAgent: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Agent name
+                <input
+                  placeholder="Name of the agent who made the callback"
+                  value={draft.agentName}
+                  onChange={(event) =>
+                    setDraft({ ...draft, agentName: event.target.value })
                   }
                 />
               </label>

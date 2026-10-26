@@ -145,6 +145,7 @@ const agentCallbackInput = z.object({
   priority: z.enum(AGENT_CALLBACK_PRIORITIES),
   intent: z.enum(AGENT_CALLBACK_INTENTS).default("CALLBACK_REQUEST"),
   assignedAgent: z.string().trim().max(120),
+  agentName: z.string().trim().max(120).default(""),
   notes: z.string().trim().max(1000),
 });
 const agentCallbackUpdate = z.object({
@@ -153,6 +154,7 @@ const agentCallbackUpdate = z.object({
   priority: z.enum(AGENT_CALLBACK_PRIORITIES).optional(),
   intent: z.enum(AGENT_CALLBACK_INTENTS).optional(),
   assignedAgent: z.string().trim().max(120).optional(),
+  agentName: z.string().trim().max(120).optional(),
   notes: z.string().trim().max(1000).optional(),
   outcomeNotes: z.string().trim().max(2000).optional(),
 });
@@ -164,6 +166,19 @@ const publicAgentCallbackInput = z
     priority: z.enum(AGENT_CALLBACK_PRIORITIES).default("NORMAL"),
     assignedAgent: z.string().trim().max(120).default(""),
     notes: z.string().trim().max(1000).default(""),
+  })
+  .strict();
+const publicAgentCallbackStatusInput = z
+  .object({
+    customerId: z.string().trim().min(1).max(80),
+    policyId: z.string().trim().min(1).max(80),
+    detail: z.string().trim().max(2000),
+    status: z.preprocess(
+      (value) =>
+        typeof value === "string" ? value.trim().toUpperCase() : value,
+      z.enum(AGENT_CALLBACK_STATUSES),
+    ),
+    agentName: z.string().trim().max(120).optional(),
   })
   .strict();
 
@@ -448,6 +463,7 @@ export async function createAgentCallback(
       priority: data.priority,
       intent: data.intent,
       assignedAgent: data.assignedAgent || actor,
+      agentName: data.agentName,
       notes: data.notes,
       outcomeNotes: "",
       completedAt: "",
@@ -498,6 +514,7 @@ export async function createAgentCallbackByPolicyNumber(
     priority: callback.priority,
     intent: callback.intent,
     assignedAgent: callback.assignedAgent,
+    agentName: callback.agentName,
     notes: callback.notes,
     createdAt: callback.createdAt,
   };
@@ -556,6 +573,129 @@ export async function updateAgentCallback(
     policyId: item.policyId,
   });
   return item;
+}
+
+export async function upsertAgentCallbackFromGenesysImport(
+  policyId: string,
+  actor: string,
+): Promise<{ callback: AgentCallback; created: boolean }> {
+  const policy = await policies.findById("policyId", policyId);
+  if (!policy) throw httpError(404, "Policy not found");
+  const customer = await customers.findById("customerId", policy.customerId);
+  if (!customer) throw httpError(400, "Policy customer is missing");
+
+  const result = await agentCallbacks.mutate((rows) => {
+    const timestamp = new Date().toISOString();
+    let index = -1;
+    for (let current = rows.length - 1; current >= 0; current--) {
+      if (
+        rows[current].customerId === customer.customerId &&
+        rows[current].policyId === policy.policyId
+      ) {
+        index = current;
+        break;
+      }
+    }
+    if (index >= 0) {
+      rows[index] = {
+        ...rows[index],
+        status: "SCHEDULED",
+        scheduledAt: timestamp,
+        completedAt: "",
+        updatedBy: actor,
+        updatedAt: timestamp,
+      };
+      return { callback: rows[index], created: false };
+    }
+
+    const callback: AgentCallback = {
+      callbackId: nextId("CALL", rows, "callbackId"),
+      customerId: customer.customerId,
+      policyId: policy.policyId,
+      scheduledAt: timestamp,
+      status: "SCHEDULED",
+      priority: "NORMAL",
+      intent: "CALLBACK_REQUEST",
+      assignedAgent: "",
+      agentName: "",
+      notes: "Created automatically from a Genesys lead import.",
+      outcomeNotes: "",
+      completedAt: "",
+      createdBy: actor,
+      updatedBy: actor,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    rows.push(callback);
+    return { callback, created: true };
+  });
+  await audit(
+    result.created
+      ? "CREATE_AGENT_CALLBACK_FROM_GENESYS"
+      : "RESCHEDULE_AGENT_CALLBACK_FROM_GENESYS",
+    actor,
+    result.callback.callbackId,
+    {
+      customerId: result.callback.customerId,
+      policyId: result.callback.policyId,
+    },
+  );
+  return result;
+}
+
+export async function updateAgentCallbackStatusByKeys(
+  input: unknown,
+  actor: string,
+) {
+  const data = publicAgentCallbackStatusInput.parse(input);
+  const item = await agentCallbacks.mutate((rows) => {
+    let index = -1;
+    for (let current = rows.length - 1; current >= 0; current--) {
+      if (
+        rows[current].customerId === data.customerId &&
+        rows[current].policyId === data.policyId
+      ) {
+        index = current;
+        break;
+      }
+    }
+    if (index < 0)
+      throw httpError(
+        404,
+        "Agent Call Back not found for this customerId and policyId",
+      );
+    const timestamp = new Date().toISOString();
+    rows[index] = {
+      ...rows[index],
+      status: data.status,
+      outcomeNotes: data.detail,
+      ...(data.agentName === undefined ? {} : { agentName: data.agentName }),
+      ...(data.status === "SCHEDULED" ? { scheduledAt: timestamp } : {}),
+      completedAt:
+        data.status === "COMPLETED" ? rows[index].completedAt || timestamp : "",
+      updatedBy: actor,
+      updatedAt: timestamp,
+    };
+    return rows[index];
+  });
+  await syncCallbackToPolicy(item, actor);
+  await audit("PUBLIC_UPDATE_AGENT_CALLBACK_STATUS", actor, item.callbackId, {
+    customerId: item.customerId,
+    policyId: item.policyId,
+    status: item.status,
+    agentName: item.agentName,
+  });
+  return {
+    callbackId: item.callbackId,
+    customerId: item.customerId,
+    policyId: item.policyId,
+    status: item.status,
+    detail: item.outcomeNotes,
+    agentName: item.agentName,
+    scheduledAt: item.scheduledAt,
+    completedAt: item.completedAt,
+    updatedAt: item.updatedAt,
+  };
 }
 
 const renewPolicyInput = z

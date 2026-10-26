@@ -401,6 +401,7 @@ export function seedAgentCallbacks(): AgentCallback[] {
       priority: index === 0 ? "HIGH" : "NORMAL",
       intent: "CALLBACK_REQUEST",
       assignedAgent: "",
+      agentName: "",
       notes: "Customer requested a renewal callback.",
       outcomeNotes: "",
       completedAt: "",

@@ -317,7 +317,9 @@ adminDataRouter.get("/agent-callbacks", async (request, response) => {
         row.policy?.policyNumber,
         row.intent,
         row.assignedAgent,
+        row.agentName,
         row.notes,
+        row.outcomeNotes,
       ].some((value) => contains(String(value || ""), search)),
     );
   if (request.query.status)

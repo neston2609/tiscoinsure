@@ -4,7 +4,10 @@ import {
   mapCampaignContact,
   payloadHash,
 } from "../../domain/campaign-contact";
-import { httpError } from "../../domain/business";
+import {
+  httpError,
+  upsertAgentCallbackFromGenesysImport,
+} from "../../domain/business";
 import {
   audit,
   campaigns,
@@ -445,7 +448,13 @@ export async function bulkSyncPolicies(
   const results: Awaited<ReturnType<typeof syncPolicy>>[] = [];
   for (const policyId of unique) {
     try {
-      results.push(await syncPolicy(policyId, actor, schema, { force }));
+      const result = await syncPolicy(policyId, actor, schema, { force });
+      if (
+        campaignListId &&
+        ["SYNCED", "ALREADY_SYNCED"].includes(result.status)
+      )
+        await upsertAgentCallbackFromGenesysImport(policyId, actor);
+      results.push(result);
     } catch (error) {
       results.push({
         policyId,

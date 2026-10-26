@@ -209,6 +209,7 @@ export interface AgentCallback {
   priority: AgentCallbackPriority;
   intent: AgentCallbackIntent;
   assignedAgent: string;
+  agentName: string;
   notes: string;
   outcomeNotes: string;
   completedAt: string;

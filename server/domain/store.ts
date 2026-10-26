@@ -83,6 +83,7 @@ export async function initializeBusinessData(): Promise<void> {
             priority: "NORMAL",
             intent: "CALLBACK_REQUEST",
             assignedAgent: "",
+            agentName: "",
             notes: "Migrated from the policy renewal callback.",
             outcomeNotes: "",
             completedAt: "",
@@ -96,10 +97,17 @@ export async function initializeBusinessData(): Promise<void> {
   }
   const validIntents = new Set<string>(AGENT_CALLBACK_INTENTS);
   const storedCallbacks = await agentCallbacks.all();
-  if (storedCallbacks.some((item) => !validIntents.has(item.intent)))
+  if (
+    storedCallbacks.some(
+      (item) =>
+        !validIntents.has(item.intent) || typeof item.agentName !== "string",
+    )
+  )
     await agentCallbacks.mutate((rows) => {
-      for (const row of rows)
+      for (const row of rows) {
         if (!validIntents.has(row.intent)) row.intent = "CALLBACK_REQUEST";
+        if (typeof row.agentName !== "string") row.agentName = "";
+      }
     });
 }
 

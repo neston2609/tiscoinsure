@@ -5,6 +5,7 @@ import {
   createInquiry,
   httpError,
   renewPolicyByNumber,
+  updateAgentCallbackStatusByKeys,
 } from "../domain/business";
 import { products } from "../domain/store";
 
@@ -104,6 +105,17 @@ publicRouter.post(
       .json(
         await createAgentCallbackByPolicyNumber(request.body, "public-api"),
       );
+  },
+);
+
+publicRouter.post(
+  "/agent-callbacks/status",
+  agentCallbackLimiter,
+  async (request, response) => {
+    response.setHeader("Cache-Control", "no-store");
+    response.json(
+      await updateAgentCallbackStatusByKeys(request.body, "public-api"),
+    );
   },
 );
 

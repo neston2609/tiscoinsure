@@ -21,7 +21,7 @@ test(
     let lastPut: Record<string, unknown> = {};
     try {
       const [
-        { initializeBusinessData, customers, policies },
+        { initializeBusinessData, agentCallbacks, customers, policies },
         { updateCustomer },
         { genesysRegionService },
         { GenesysConfigService },
@@ -128,11 +128,42 @@ test(
       const reimported = await bulkSyncPolicies(
         ["POL00001"],
         "test",
-        undefined,
+        "CAMP00001",
         true,
       );
       assert.equal(reimported.results[0]?.status, "SYNCED");
       assert.equal(puts, 2);
+      const importedCallbacks = (await agentCallbacks.all()).filter(
+        (item) =>
+          item.customerId === "CUST00001" && item.policyId === "POL00001",
+      );
+      assert.equal(importedCallbacks.length, 1);
+      assert.equal(importedCallbacks[0]?.status, "SCHEDULED");
+      const importedCallbackId = importedCallbacks[0]?.callbackId;
+      await agentCallbacks.mutate((rows) => {
+        const item = rows.find(
+          (row) =>
+            row.customerId === "CUST00001" && row.policyId === "POL00001",
+        );
+        assert.ok(item);
+        item.status = "COMPLETED";
+        item.completedAt = new Date().toISOString();
+      });
+      const repeatedImport = await bulkSyncPolicies(
+        ["POL00001"],
+        "test",
+        "CAMP00001",
+      );
+      assert.equal(repeatedImport.results[0]?.status, "ALREADY_SYNCED");
+      assert.equal(puts, 2);
+      const repeatedCallbacks = (await agentCallbacks.all()).filter(
+        (item) =>
+          item.customerId === "CUST00001" && item.policyId === "POL00001",
+      );
+      assert.equal(repeatedCallbacks.length, 1);
+      assert.equal(repeatedCallbacks[0]?.callbackId, importedCallbackId);
+      assert.equal(repeatedCallbacks[0]?.status, "SCHEDULED");
+      assert.equal(repeatedCallbacks[0]?.completedAt, "");
       const recalled = await recallPolicy("POL00001", "test");
       assert.equal(recalled.status, "RECALLED");
       assert.equal(recalled.verified, true);
