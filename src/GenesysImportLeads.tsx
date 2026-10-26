@@ -46,6 +46,7 @@ type ContactPreview = {
     invalidPhone: number;
     duplicatePhone: number;
     alreadySynced: number;
+    reloadAvailable: number;
   };
 };
 
@@ -74,11 +75,11 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
   const [selectedId, setSelectedId] = useState("");
   const [preview, setPreview] = useState<ContactPreview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<"" | "preview" | "load">("");
+  const [busy, setBusy] = useState<"" | "preview" | "load" | "reload">("");
   const [listBusy, setListBusy] = useState<"" | "lists" | "select" | "clear">(
     "",
   );
-  const [includeSynced, setIncludeSynced] = useState(false);
+  const [reloadingPolicyId, setReloadingPolicyId] = useState("");
   const [clearConfirmation, setClearConfirmation] = useState("");
   const [clearTarget, setClearTarget] = useState<ContactList | null>(null);
   const [error, setError] = useState("");
@@ -92,22 +93,23 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
   const previewRows = useMemo(
     () =>
       preview?.rows.filter((row) =>
-        ["ELIGIBLE", "ALREADY_SYNCED"].includes(row.eligibility),
+        ["ELIGIBLE", "ALREADY_SYNCED", "RELOAD_AVAILABLE"].includes(
+          row.eligibility,
+        ),
       ) ?? [],
     [preview],
   );
-  const loadRows = useMemo(
-    () =>
-      previewRows.filter(
-        (row) =>
-          row.eligibility === "ELIGIBLE" ||
-          (includeSynced && row.eligibility === "ALREADY_SYNCED"),
-      ),
-    [includeSynced, previewRows],
+  const readyRows = useMemo(
+    () => previewRows.filter((row) => row.eligibility === "ELIGIBLE"),
+    [previewRows],
   );
-  const reimportCount = loadRows.filter(
-    (row) => row.eligibility === "ALREADY_SYNCED",
-  ).length;
+  const reloadRows = useMemo(
+    () =>
+      previewRows.filter((row) =>
+        ["ALREADY_SYNCED", "RELOAD_AVAILABLE"].includes(row.eligibility),
+      ),
+    [previewRows],
+  );
   const selectedList =
     contactLists.find((list) => list.id === targetListId) ||
     (targetListId === activeConfig.contactListId && targetListId
@@ -229,7 +231,6 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
       setMessage(result.message);
       setClearTarget(null);
       setClearConfirmation("");
-      setIncludeSynced(false);
       if (selectedId) await previewCampaign(selectedId, true);
     } catch (reason) {
       setError(
@@ -248,7 +249,7 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
     setMessage("");
     setError("");
     setFailed([]);
-    setIncludeSynced(false);
+    setReloadingPolicyId("");
   }
 
   async function previewCampaign(id = selectedId, keepMessage = false) {
@@ -261,7 +262,7 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
     setError("");
     if (!keepMessage) setMessage("");
     setFailed([]);
-    setIncludeSynced(false);
+    setReloadingPolicyId("");
     try {
       const result = await api<ContactPreview>(
         `/api/admin/campaigns/${encodeURIComponent(id)}/preview`,
@@ -276,13 +277,10 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
   }
 
   async function loadLeads() {
-    if (!selected || !loadRows.length || !integrationReady) return;
-    const action = reimportCount
-      ? `Load ${loadRows.length - reimportCount} new leads and re-import ${reimportCount} synchronized leads`
-      : `Load ${loadRows.length} leads`;
+    if (!selected || !readyRows.length || !integrationReady) return;
     if (
       !window.confirm(
-        `${action} from ${selected.name} into ${activeConfig.contactListName || activeConfig.contactListId}?`,
+        `Load ${readyRows.length} leads from ${selected.name} into ${activeConfig.contactListName || activeConfig.contactListId}?`,
       )
     )
       return;
@@ -291,10 +289,10 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
     setError("");
     setMessage("");
     setFailed([]);
-    setProgress({ processed: 0, total: loadRows.length });
+    setProgress({ processed: 0, total: readyRows.length });
     const results: SyncResult[] = [];
     try {
-      const policyIds = loadRows.map((row) => row.policy.policyId);
+      const policyIds = readyRows.map((row) => row.policy.policyId);
       for (let index = 0; index < policyIds.length; index += 5) {
         const batch = policyIds.slice(index, index + 5);
         const response = await api<{ results: SyncResult[] }>(
@@ -304,7 +302,7 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
             body: JSON.stringify({
               policyIds: batch,
               campaignListId: selected.campaignListId,
-              force: reimportCount > 0,
+              force: false,
             }),
           },
         );
@@ -325,12 +323,70 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
         { method: "POST", body: JSON.stringify({}) },
       );
       setPreview(refreshed);
-      setIncludeSynced(false);
       await loadCampaigns(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Lead import failed");
     } finally {
       setBusy("");
+      setProgress({ processed: 0, total: 0 });
+    }
+  }
+
+  async function reloadContacts(rows: PreviewRow[]) {
+    if (!selected || !rows.length || !integrationReady) return;
+    const single = rows.length === 1 ? rows[0] : null;
+    const prompt = single
+      ? `Reload ${single.contact.policyNumber} with the latest customer and policy data in ${activeConfig.contactListName || activeConfig.contactListId}?`
+      : `Reload ${rows.length} synchronized contacts from ${selected.name} with the latest customer and policy data?`;
+    if (!window.confirm(prompt)) return;
+
+    setBusy("reload");
+    setReloadingPolicyId(single?.policy.policyId || "");
+    setError("");
+    setMessage("");
+    setFailed([]);
+    setProgress({ processed: 0, total: rows.length });
+    const results: SyncResult[] = [];
+    try {
+      const policyIds = rows.map((row) => row.policy.policyId);
+      for (let index = 0; index < policyIds.length; index += 5) {
+        const batch = policyIds.slice(index, index + 5);
+        const response = await api<{ results: SyncResult[] }>(
+          "/api/admin/genesys/sync/bulk",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              policyIds: batch,
+              campaignListId: selected.campaignListId,
+              force: true,
+            }),
+          },
+        );
+        results.push(...response.results);
+        setProgress({ processed: results.length, total: policyIds.length });
+      }
+
+      const failures = results.filter(
+        (result) => !["SYNCED", "ALREADY_SYNCED"].includes(result.status),
+      );
+      const completed = results.length - failures.length;
+      setFailed(failures);
+      setMessage(
+        `Reload completed: ${completed} successful, ${failures.length} failed.`,
+      );
+      const refreshed = await api<ContactPreview>(
+        `/api/admin/campaigns/${encodeURIComponent(selected.campaignListId)}/preview`,
+        { method: "POST", body: JSON.stringify({}) },
+      );
+      setPreview(refreshed);
+      await loadCampaigns(true);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Contact reload failed",
+      );
+    } finally {
+      setBusy("");
+      setReloadingPolicyId("");
       setProgress({ processed: 0, total: 0 });
     }
   }
@@ -568,25 +624,25 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
               <p className="muted">{selected.name}</p>
             </div>
             <div className="lead-preview-actions">
-              <label className="lead-reimport-toggle">
-                <input
-                  type="checkbox"
-                  checked={includeSynced}
-                  onChange={(event) => setIncludeSynced(event.target.checked)}
-                  disabled={!preview.summary.alreadySynced || Boolean(busy)}
-                />
-                <span>
-                  Include already synced leads
-                  <small>
-                    Re-import {preview.summary.alreadySynced} contact(s)
-                  </small>
-                </span>
-              </label>
+              <button
+                className="secondary"
+                onClick={() => reloadContacts(reloadRows)}
+                disabled={
+                  Boolean(busy) || !reloadRows.length || !integrationReady
+                }
+              >
+                {busy === "reload" && !reloadingPolicyId ? (
+                  <Loader2 className="spin" size={16} />
+                ) : (
+                  <RefreshCcw size={16} />
+                )}
+                Reload Contacts ({reloadRows.length})
+              </button>
               <button
                 className="primary"
                 onClick={loadLeads}
                 disabled={
-                  busy === "load" || !loadRows.length || !integrationReady
+                  Boolean(busy) || !readyRows.length || !integrationReady
                 }
               >
                 {busy === "load" ? (
@@ -594,8 +650,7 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
                 ) : (
                   <CloudUpload size={16} />
                 )}
-                {reimportCount ? "Load / Re-import" : "Load Lead"} (
-                {loadRows.length})
+                Load Lead ({readyRows.length})
               </button>
             </div>
           </div>
@@ -625,12 +680,18 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
               <span>Already synced</span>
               <strong>{preview.summary.alreadySynced}</strong>
             </div>
+            <div>
+              <span>Reload available</span>
+              <strong>{preview.summary.reloadAvailable}</strong>
+            </div>
           </div>
 
           {progress.total > 0 && (
             <div className="lead-load-progress">
               <div>
-                <span>Loading leads</span>
+                <span>
+                  {busy === "reload" ? "Reloading contacts" : "Loading leads"}
+                </span>
                 <strong>
                   {progress.processed} / {progress.total}
                 </strong>
@@ -662,7 +723,7 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
                     <th>Expiry date</th>
                     <th>Days left</th>
                     <th>Renewal status</th>
-                    <th>Import action</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -670,7 +731,9 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
                     <tr
                       key={row.policy.policyId}
                       className={
-                        row.eligibility === "ALREADY_SYNCED"
+                        ["ALREADY_SYNCED", "RELOAD_AVAILABLE"].includes(
+                          row.eligibility,
+                        )
                           ? "lead-row-synced"
                           : ""
                       }
@@ -689,19 +752,27 @@ export function GenesysImportLeads({ config }: { config: GenesysConfig }) {
                         </span>
                       </td>
                       <td>
-                        <span
-                          className={`lead-status ${
-                            row.eligibility === "ALREADY_SYNCED"
-                              ? "lead-status-reimport"
-                              : "lead-status-ready"
-                          }`}
-                        >
-                          {row.eligibility === "ALREADY_SYNCED"
-                            ? includeSynced
-                              ? "Re-import selected"
-                              : "Re-import available"
-                            : "Ready"}
-                        </span>
+                        {["ALREADY_SYNCED", "RELOAD_AVAILABLE"].includes(
+                          row.eligibility,
+                        ) ? (
+                          <button
+                            className="secondary lead-reload-button"
+                            onClick={() => reloadContacts([row])}
+                            disabled={Boolean(busy) || !integrationReady}
+                          >
+                            {busy === "reload" &&
+                            reloadingPolicyId === row.policy.policyId ? (
+                              <Loader2 className="spin" size={14} />
+                            ) : (
+                              <RefreshCcw size={14} />
+                            )}
+                            Reload Contact
+                          </button>
+                        ) : (
+                          <span className="lead-status lead-status-ready">
+                            Ready
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}

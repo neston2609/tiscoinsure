@@ -140,6 +140,18 @@ test("seed includes required sample and DNC is never eligible", () => {
   );
   assert.equal(sameList.rows[0]?.eligibility, "ALREADY_SYNCED");
   assert.equal(differentList.rows[0]?.eligibility, "ELIGIBLE");
+  samplePolicy.genesys.lastPayloadHash = "sha256:outdated";
+  samplePolicy.genesys.syncStatus = "OUTDATED";
+  const reloadable = buildPreview(
+    policies,
+    customers,
+    products,
+    {},
+    [samplePolicy.policyId],
+    "list-a",
+  );
+  assert.equal(reloadable.rows[0]?.eligibility, "RELOAD_AVAILABLE");
+  assert.equal(reloadable.summary.reloadAvailable, 1);
 });
 
 test("CSV is BOM/CRLF UTF-8, escaped, and protects formulas", () => {

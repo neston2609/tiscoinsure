@@ -170,7 +170,12 @@ export interface CampaignPreviewRow {
   customer: Customer;
   product: Product;
   eligibility:
-    "ELIGIBLE" | "DNC" | "INVALID_PHONE" | "DUPLICATE_PHONE" | "ALREADY_SYNCED";
+    | "ELIGIBLE"
+    | "DNC"
+    | "INVALID_PHONE"
+    | "DUPLICATE_PHONE"
+    | "ALREADY_SYNCED"
+    | "RELOAD_AVAILABLE";
 }
 
 export function buildPreview(
@@ -207,11 +212,15 @@ export function buildPreview(
     else if (!isValidPhone(contact.phone)) eligibility = "INVALID_PHONE";
     else if (seenPhones.has(contact.phone)) eligibility = "DUPLICATE_PHONE";
     else if (
-      policy.genesys.syncStatus === "SYNCED" &&
-      policy.genesys.lastPayloadHash === payloadHash(contact) &&
+      policy.genesys.contactId &&
       (!contactListId || policy.genesys.contactListId === contactListId)
-    )
-      eligibility = "ALREADY_SYNCED";
+    ) {
+      eligibility =
+        policy.genesys.syncStatus === "SYNCED" &&
+        policy.genesys.lastPayloadHash === payloadHash(contact)
+          ? "ALREADY_SYNCED"
+          : "RELOAD_AVAILABLE";
+    }
     if (eligibility !== "DNC" && eligibility !== "INVALID_PHONE")
       seenPhones.add(contact.phone);
     rows.push({ contact, policy, customer, product, eligibility });
@@ -225,6 +234,9 @@ export function buildPreview(
       .length,
     alreadySynced: rows.filter((row) => row.eligibility === "ALREADY_SYNCED")
       .length,
+    reloadAvailable: rows.filter(
+      (row) => row.eligibility === "RELOAD_AVAILABLE",
+    ).length,
     eligible: rows.filter((row) => row.eligibility === "ELIGIBLE").length,
   };
   return { rows, summary };
