@@ -575,6 +575,36 @@ export async function updateAgentCallback(
   return item;
 }
 
+export async function deleteAgentCallback(
+  id: string,
+  actor: string,
+): Promise<void> {
+  const existing = await agentCallbacks.findById("callbackId", id);
+  if (!existing) throw httpError(404, "Callback schedule not found");
+
+  await agentCallbacks.mutate((rows) => {
+    const index = rows.findIndex((row) => row.callbackId === id);
+    if (index < 0) throw httpError(404, "Callback schedule not found");
+    rows.splice(index, 1);
+  }, true);
+
+  const hasAnotherScheduledCallback = (await agentCallbacks.all()).some(
+    (item) =>
+      item.policyId === existing.policyId && item.status === "SCHEDULED",
+  );
+  if (existing.status === "SCHEDULED" && !hasAnotherScheduledCallback)
+    await syncCallbackToPolicy(
+      { ...existing, status: "CANCELLED", completedAt: "" },
+      actor,
+    );
+
+  await audit("DELETE_AGENT_CALLBACK", actor, id, {
+    customerId: existing.customerId,
+    policyId: existing.policyId,
+    status: existing.status,
+  });
+}
+
 export async function upsertAgentCallbackFromGenesysImport(
   policyId: string,
   actor: string,

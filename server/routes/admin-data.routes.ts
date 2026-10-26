@@ -6,6 +6,7 @@ import {
   createCustomer,
   createPolicy,
   createProduct,
+  deleteAgentCallback,
   deleteCustomer,
   deletePolicy,
   deleteProduct,
@@ -372,6 +373,11 @@ adminDataRouter.put("/agent-callbacks/:id", async (request, response) => {
       request.user!.name,
     ),
   );
+});
+
+adminDataRouter.delete("/agent-callbacks/:id", async (request, response) => {
+  await deleteAgentCallback(request.params.id, request.user!.name);
+  response.status(204).end();
 });
 
 adminDataRouter.get("/policies/renewal-events", (_request, response) => {

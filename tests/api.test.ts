@@ -310,6 +310,56 @@ test(
         ).status,
         404,
       );
+      const deletableCallbackResponse = await request(
+        "/api/admin/agent-callbacks",
+        "POST",
+        {
+          policyId: publicCallbackPolicy.policyId,
+          scheduledAt: "2099-12-31T05:00:00.000Z",
+          priority: "NORMAL",
+          intent: "CALLBACK_REQUEST",
+          assignedAgent: "Test Agent",
+          agentName: "Agentic Virtual Agent",
+          notes: "Delete API test callback.",
+        },
+        cookie,
+      );
+      assert.equal(
+        deletableCallbackResponse.status,
+        201,
+        await deletableCallbackResponse.clone().text(),
+      );
+      const deletableCallback = (await deletableCallbackResponse.json()) as {
+        callbackId: string;
+      };
+      assert.equal(
+        (
+          await request(
+            `/api/admin/agent-callbacks/${deletableCallback.callbackId}`,
+            "DELETE",
+            undefined,
+            cookie,
+          )
+        ).status,
+        204,
+      );
+      assert.equal(
+        (
+          await request(
+            `/api/admin/agent-callbacks/${deletableCallback.callbackId}`,
+            "DELETE",
+            undefined,
+            cookie,
+          )
+        ).status,
+        404,
+      );
+      const policyAfterCallbackDelete = await get<{
+        callbackDateTime: string | null;
+        renewalStatus: string;
+      }>(`/api/admin/policies/${publicCallbackPolicy.policyId}`);
+      assert.equal(policyAfterCallbackDelete.callbackDateTime, null);
+      assert.equal(policyAfterCallbackDelete.renewalStatus, "CONTACT_PENDING");
       const callbackOptions = await get<{
         items: { policy: { policyId: string } }[];
       }>("/api/admin/agent-callbacks/options");

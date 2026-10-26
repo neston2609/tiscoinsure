@@ -3555,6 +3555,31 @@ function AgentCallbacks({ username }: { username: string }) {
     }
   }
 
+  async function removeCallback(item: AgentCallbackRow) {
+    if (
+      !window.confirm(
+        `Delete callback ${item.callbackId} for ${item.customerId} / ${item.policyId}? This cannot be undone.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await api(`${base}/agent-callbacks/${item.callbackId}`, {
+        method: "DELETE",
+      });
+      if (draft?.callbackId === item.callbackId) setDraft(null);
+      if (data.items.length === 1 && page > 1) setPage(page - 1);
+      setMessage(`${item.callbackId} deleted.`);
+      setVersion((value) => value + 1);
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const currentCallback = draft?.callbackId
     ? data.items.find((item) => item.callbackId === draft.callbackId)
     : undefined;
@@ -3694,6 +3719,7 @@ function AgentCallbacks({ username }: { username: string }) {
                   ) : (
                     item.customerId
                   )}
+                  <small className="mono">Customer ID: {item.customerId}</small>
                   <small>{item.customer?.phone}</small>
                 </td>
                 <td>
@@ -3703,6 +3729,7 @@ function AgentCallbacks({ username }: { username: string }) {
                   >
                     {item.policy?.policyNumber || item.policyId}
                   </a>
+                  <small className="mono">Policy ID: {item.policyId}</small>
                   <small>
                     Expires {dateText(item.policy?.expiryDate)} ·{" "}
                     {item.daysUntilExpiry} days
@@ -3749,6 +3776,14 @@ function AgentCallbacks({ username }: { username: string }) {
                       </button>
                     </>
                   )}
+                  <button
+                    className="danger-link"
+                    disabled={busy}
+                    title="Delete callback record"
+                    onClick={() => removeCallback(item)}
+                  >
+                    <Trash2 size={14} /> Delete
+                  </button>
                 </td>
               </tr>
             ))}
